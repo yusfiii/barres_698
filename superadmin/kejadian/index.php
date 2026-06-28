@@ -49,13 +49,85 @@ if (isset($_GET['delete'])) {
     $conn->close();
 }
 
-// Get all incidents
+// Handle Geocoding - Update koordinat dari alamat
+if (isset($_GET['geocode']) && isset($_GET['id'])) {
+    $id = intval($_GET['id']);
+    $conn = getConnection();
+    
+    $stmt = $conn->prepare("SELECT alamat FROM kejadian_kebakaran WHERE id = ?");
+    $stmt->bind_param("i", $id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $data = $result->fetch_assoc();
+    $stmt->close();
+    
+    if ($data) {
+        $coords = geocodeAddress($data['alamat']);
+        if ($coords) {
+            $stmt = $conn->prepare("UPDATE kejadian_kebakaran SET latitude = ?, longitude = ? WHERE id = ?");
+            $stmt->bind_param("ddi", $coords['lat'], $coords['lng'], $id);
+            if ($stmt->execute()) {
+                $message = "Koordinat berhasil diperbarui! Lat: " . $coords['lat'] . ", Lng: " . $coords['lng'];
+                $messageType = "success";
+            } else {
+                $message = "Gagal memperbarui koordinat!";
+                $messageType = "danger";
+            }
+            $stmt->close();
+        } else {
+            $message = "Gagal mendapatkan koordinat dari alamat. Pastikan alamat lengkap dan benar!";
+            $messageType = "danger";
+        }
+    }
+    $conn->close();
+}
+
+// Handle Bulk Geocoding - Update semua data yang tidak punya koordinat
+if (isset($_GET['bulk_geocode'])) {
+    $conn = getConnection();
+    $query = "SELECT id, alamat FROM kejadian_kebakaran WHERE latitude IS NULL OR latitude = 0 OR longitude IS NULL OR longitude = 0";
+    $result = $conn->query($query);
+    $updated = 0;
+    $failed = 0;
+    
+    while ($row = $result->fetch_assoc()) {
+        $coords = geocodeAddress($row['alamat']);
+        if ($coords) {
+            $stmt = $conn->prepare("UPDATE kejadian_kebakaran SET latitude = ?, longitude = ? WHERE id = ?");
+            $stmt->bind_param("ddi", $coords['lat'], $coords['lng'], $row['id']);
+            if ($stmt->execute()) {
+                $updated++;
+            } else {
+                $failed++;
+            }
+            $stmt->close();
+        } else {
+            $failed++;
+        }
+    }
+    $conn->close();
+    
+    $message = "Proses geocoding selesai! Berhasil: $updated, Gagal: $failed";
+    $messageType = $updated > 0 ? "success" : "danger";
+}
+
+// Get all incidents dengan koordinat untuk peta
 $conn = getConnection();
 $query = "SELECT * FROM kejadian_kebakaran ORDER BY waktu DESC";
 $result = $conn->query($query);
 $incidents = [];
+$coordinates = [];
 while ($row = $result->fetch_assoc()) {
     $incidents[] = $row;
+    if (!empty($row['latitude']) && !empty($row['longitude'])) {
+        $coordinates[] = [
+            'lat' => (float)$row['latitude'],
+            'lng' => (float)$row['longitude'],
+            'alamat' => $row['alamat'],
+            'waktu' => $row['waktu'],
+            'id' => $row['id']
+        ];
+    }
 }
 $conn->close();
 ?>
@@ -74,8 +146,68 @@ $conn->close();
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet Marker Cluster -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
 
     <style>
+        /* ... style yang sama seperti sebelumnya ... */
+        /* Tambahkan style untuk peta di halaman */
+        
+        .map-container-page {
+            height: 400px;
+            border-radius: 20px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        
+        #mapPage {
+            height: 100%;
+            width: 100%;
+        }
+        
+        .badge-no-coord {
+            background: rgba(255, 193, 7, 0.15);
+            color: #e6a000;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+        }
+        
+        .btn-geocode {
+            background: rgba(23, 162, 184, 0.1);
+            border: 1px solid rgba(23, 162, 184, 0.3);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 11px;
+            color: #17a2b8;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        
+        .btn-geocode:hover {
+            background: rgba(23, 162, 184, 0.2);
+            color: #17a2b8;
+        }
+        
+        .btn-geocode-bulk {
+            background: rgba(40, 167, 69, 0.1);
+            border: 1px solid rgba(40, 167, 69, 0.3);
+            padding: 6px 14px;
+            border-radius: 10px;
+            font-size: 12px;
+            color: #28a745;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        
+        .btn-geocode-bulk:hover {
+            background: rgba(40, 167, 69, 0.2);
+            color: #28a745;
+        }
+
+        /* Style yang sama seperti sebelumnya */
         * {
             margin: 0;
             padding: 0;
@@ -95,7 +227,6 @@ $conn->close();
             min-height: 100vh;
         }
 
-        /* Top Navbar */
         .top-navbar {
             background: #FFFFFF;
             border: 1px solid rgba(0, 0, 0, 0.08);
@@ -180,7 +311,6 @@ $conn->close();
                 opacity: 0;
                 transform: translateY(-10px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -232,6 +362,7 @@ $conn->close();
             border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 20px;
             overflow: hidden;
+            margin-bottom: 28px;
         }
 
         .card-header-custom {
@@ -329,7 +460,6 @@ $conn->close();
             display: inline-block;
         }
 
-        /* Alert */
         .alert-custom {
             border-radius: 14px;
             padding: 12px 18px;
@@ -357,14 +487,13 @@ $conn->close();
                 opacity: 0;
                 transform: translateY(-10px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
             }
         }
 
-        /* Modal Floating */
+        /* Modal Floating - style sama seperti sebelumnya */
         .modal-floating {
             display: none;
             position: fixed;
@@ -388,7 +517,6 @@ $conn->close();
             from {
                 opacity: 0;
             }
-
             to {
                 opacity: 1;
             }
@@ -409,7 +537,6 @@ $conn->close();
                 opacity: 0;
                 transform: scale(0.95) translateY(-30px);
             }
-
             to {
                 opacity: 1;
                 transform: scale(1) translateY(0);
@@ -606,7 +733,6 @@ $conn->close();
             color: #666;
         }
 
-        /* DataTables overrides */
         .dataTables_wrapper .dataTables_length select,
         .dataTables_wrapper .dataTables_filter input {
             background: #F8F8F8;
@@ -632,7 +758,6 @@ $conn->close();
             color: #1A1A1A !important;
         }
 
-        /* Responsive */
         @media (max-width: 768px) {
             .main-content {
                 margin-left: 0;
@@ -648,6 +773,10 @@ $conn->close();
                 flex-direction: column;
                 gap: 12px;
                 align-items: flex-start;
+            }
+
+            .map-container-page {
+                height: 250px;
             }
         }
     </style>
@@ -689,10 +818,58 @@ $conn->close();
             </div>
         <?php endif; ?>
 
+        <!-- PETA SEBARAN TITIK KEJADIAN -->
+        <div class="card-custom">
+            <div class="card-header-custom">
+                <h3><i class="fas fa-map-marked-alt"></i> Peta Sebaran Kejadian</h3>
+                <div>
+                    <span class="badge-stats" style="background:rgba(247,184,1,0.1); color:#F7B801; padding:4px 12px; border-radius:20px; font-size:12px;">
+                        <i class="fas fa-map-pin"></i> <?= count($coordinates) ?> Titik
+                    </span>
+                    <?php
+                    $no_coord = count($incidents) - count($coordinates);
+                    if ($no_coord > 0):
+                    ?>
+                        <span class="badge-stats" style="background:rgba(255,193,7,0.1); color:#e6a000; padding:4px 12px; border-radius:20px; font-size:12px;">
+                            <i class="fas fa-exclamation-triangle"></i> <?= $no_coord ?> Tanpa Koordinat
+                        </span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="card-body" style="padding: 20px;">
+                <?php if (count($coordinates) > 0): ?>
+                    <div class="map-container-page">
+                        <div id="mapPage"></div>
+                    </div>
+                <?php else: ?>
+                    <div class="text-center py-4" style="color: #999;">
+                        <i class="fas fa-map fa-3x mb-3 d-block" style="color: #ddd;"></i>
+                        <p>Belum ada data kejadian dengan koordinat</p>
+                        <p class="small">Tambahkan data atau gunakan fitur <strong>Geocoding</strong> untuk mengubah alamat menjadi koordinat</p>
+                    </div>
+                <?php endif; ?>
+                
+                <!-- Tombol Geocoding -->
+                <div class="d-flex gap-2 mt-3 flex-wrap">
+                    <?php if ($no_coord > 0): ?>
+                        <a href="?bulk_geocode=1" class="btn-geocode-bulk" onclick="return confirm('Proses ini akan mencoba mencari koordinat untuk semua data yang belum memiliki koordinat. Lanjutkan?')">
+                            <i class="fas fa-sync-alt me-1"></i> Geocoding Massal (<?= $no_coord ?> data)
+                        </a>
+                    <?php endif; ?>
+                    <button class="btn-geocode-bulk" onclick="refreshMap()" style="background:rgba(23,162,184,0.1); border-color:rgba(23,162,184,0.3); color:#17a2b8;">
+                        <i class="fas fa-redo me-1"></i> Refresh Peta
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabel Data -->
         <div class="card-custom">
             <div class="card-header-custom">
                 <h3><i class="fas fa-list"></i> Daftar Kejadian Kebakaran</h3>
-                <button class="btn-tambah" id="btnTambah"><i class="fas fa-plus"></i> Tambah Data</button>
+                <div class="d-flex gap-2">
+                    <button class="btn-tambah" id="btnTambah"><i class="fas fa-plus"></i> Tambah Data</button>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table-custom table" id="dataTable">
@@ -704,12 +881,15 @@ $conn->close();
                             <th>Alamat</th>
                             <th>Kecamatan</th>
                             <th>Kelurahan</th>
+                            <th>Koordinat</th>
                             <th>Korban</th>
                             <th>Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($incidents as $index => $row): ?>
+                        <?php foreach ($incidents as $index => $row): 
+                            $hasCoord = !empty($row['latitude']) && !empty($row['longitude']);
+                        ?>
                             <tr>
                                 <td><?= $index + 1 ?></td>
                                 <td>
@@ -723,7 +903,24 @@ $conn->close();
                                 <td><?= htmlspecialchars(substr($row['alamat'], 0, 40)) ?>...</td>
                                 <td><?= htmlspecialchars($row['kecamatan'] ?? '-') ?></td>
                                 <td><?= htmlspecialchars($row['kelurahan'] ?? '-') ?></td>
-                                <td><span class="badge-status">Luka: <?= $row['korban_luka'] ?></span> <span class="badge-jiwa">Jiwa: <?= $row['korban_jiwa'] ?></span></td>
+                                <td>
+                                    <?php if ($hasCoord): ?>
+                                        <span style="font-size:11px;">
+                                            <?= number_format($row['latitude'], 6) ?><br>
+                                            <?= number_format($row['longitude'], 6) ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge-no-coord"><i class="fas fa-exclamation-circle me-1"></i> Tidak ada</span>
+                                        <br>
+                                        <a href="?geocode=1&id=<?= $row['id'] ?>" class="btn-geocode mt-1" onclick="return confirm('Cari koordinat dari alamat ini?')">
+                                            <i class="fas fa-sync-alt"></i> Geocode
+                                        </a>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <span class="badge-status">Luka: <?= $row['korban_luka'] ?></span>
+                                    <span class="badge-jiwa">Jiwa: <?= $row['korban_jiwa'] ?></span>
+                                </td>
                                 <td>
                                     <button class="btn-action btn-edit" data-id="<?= $row['id'] ?>"><i class="fas fa-edit"></i></button>
                                     <a href="?delete=<?= $row['id'] ?>" class="btn-action danger" onclick="return confirm('Yakin hapus data ini?')"><i class="fas fa-trash"></i></a>
@@ -736,7 +933,7 @@ $conn->close();
         </div>
     </div>
 
-    <!-- Modal Floating -->
+    <!-- Modal Floating (sama seperti sebelumnya) -->
     <div class="modal-floating" id="modalFloating">
         <div class="modal-floating-content">
             <div class="modal-floating-header">
@@ -800,9 +997,11 @@ $conn->close();
                         <div class="d-flex gap-2 mt-3">
                             <button type="button" class="btn-location" id="getCurrentLocation"><i class="fas fa-location-dot"></i> Gunakan Lokasi Saya</button>
                             <button type="button" class="btn-location" id="searchAddressBtn"><i class="fas fa-search"></i> Cari Alamat</button>
+                            <button type="button" class="btn-location" id="geocodeFromAddress"><i class="fas fa-map-pin"></i> Dari Alamat</button>
                         </div>
                     </div>
 
+                    <!-- Form lainnya -->
                     <div class="row">
                         <div class="col-md-6">
                             <div class="form-group">
@@ -895,8 +1094,12 @@ $conn->close();
     <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
     <script>
+        // Data koordinat dari PHP
+        const coordinatesData = <?= json_encode($coordinates) ?>;
+        
         // Initialize DataTable
         $('#dataTable').DataTable({
             language: {
@@ -907,15 +1110,71 @@ $conn->close();
             ]
         });
 
-        // Map variables
+        // ============ PETA UTAMA ============
+        let mapPage;
+
+        function initMapPage() {
+            if (mapPage) {
+                mapPage.remove();
+            }
+            
+            if (coordinatesData.length === 0) {
+                return;
+            }
+            
+            const centerLat = coordinatesData.reduce((sum, c) => sum + c.lat, 0) / coordinatesData.length;
+            const centerLng = coordinatesData.reduce((sum, c) => sum + c.lng, 0) / coordinatesData.length;
+            
+            mapPage = L.map('mapPage').setView([centerLat, centerLng], 12);
+            
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(mapPage);
+            
+            // Marker Cluster
+            const markers = L.markerClusterGroup();
+            
+            coordinatesData.forEach(data => {
+                const marker = L.marker([data.lat, data.lng])
+                    .bindPopup(`
+                        <div style="font-family: 'Poppins', sans-serif; font-size: 12px;">
+                            <strong style="color: #F7B801;">Kejadian Kebakaran</strong><br>
+                            <small>${new Date(data.waktu).toLocaleString('id-ID')}</small><br>
+                            ${data.alamat ? data.alamat.substring(0, 80) + (data.alamat.length > 80 ? '...' : '') : '-'}<br>
+                            <a href="#" onclick="editKejadian(${data.id})" style="color: #F7B801; text-decoration: none;">
+                                <i class="fas fa-edit"></i> Edit
+                            </a>
+                        </div>
+                    `);
+                markers.addLayer(marker);
+            });
+            
+            mapPage.addLayer(markers);
+            
+            // Fit bounds
+            const bounds = coordinatesData.map(c => [c.lat, c.lng]);
+            mapPage.fitBounds(bounds, { padding: [30, 30] });
+        }
+
+        function refreshMap() {
+            location.reload();
+        }
+
+        function editKejadian(id) {
+            // Trigger edit button
+            document.querySelector(`.btn-edit[data-id="${id}"]`)?.click();
+        }
+
+        // ============ MAP DI MODAL ============
         let map, marker;
         const defaultLat = -3.4422;
         const defaultLng = 114.8325;
 
-        // Data Kelurahan Banjarbaru yang valid
         const validKelurahan = [
             'Landasan Ulin Timur', 'Landasan Ulin Barat', 'Landasan Ulin Utara',
-            'Syamsudin Noor', 'Guntung Payung', 'Guntung Manggis',
+            'Syamsudin Noor', 'Guntung Payong', 'Guntung Manggis',
             'Cempaka', 'Bangkal', 'Palam', 'Sungai Tiung', 'Cempaka Baru',
             'Loktabat Utara', 'Loktabat Selatan', 'Mentaos', 'Sungai Ulin', 'Komet',
             'Guntung Paikat', 'Kemuning', 'Sungai Besar', 'Sungai Lulut',
@@ -927,7 +1186,7 @@ $conn->close();
             'Landasan Ulin Barat': 'Landasan Ulin',
             'Landasan Ulin Utara': 'Landasan Ulin',
             'Syamsudin Noor': 'Landasan Ulin',
-            'Guntung Payung': 'Landasan Ulin',
+            'Guntung Payong': 'Landasan Ulin',
             'Guntung Manggis': 'Landasan Ulin',
             'Cempaka': 'Cempaka',
             'Bangkal': 'Cempaka',
@@ -982,6 +1241,63 @@ $conn->close();
             document.getElementById('latitude').value = lat.toFixed(8);
             document.getElementById('longitude').value = lng.toFixed(8);
         }
+
+        // Geocoding dari alamat di modal
+        document.getElementById('geocodeFromAddress')?.addEventListener('click', async function() {
+            const address = document.getElementById('alamat').value;
+            if (!address) {
+                alert('Masukkan alamat terlebih dahulu!');
+                return;
+            }
+            
+            document.getElementById('loadingOverlay').classList.add('show');
+            
+            try {
+                const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address + ', Banjarbaru, Kalimantan Selatan, Indonesia')}&limit=1&accept-language=id`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    const lat = parseFloat(data[0].lat);
+                    const lng = parseFloat(data[0].lon);
+                    
+                    map.setView([lat, lng], 16);
+                    marker.setLatLng([lat, lng]);
+                    updateCoordinatesFromLatLng(lat, lng);
+                    
+                    // Isi kecamatan dan kelurahan jika ada
+                    if (data[0].display_name) {
+                        // Parse kecamatan dan kelurahan dari display_name
+                        const parts = data[0].display_name.split(',');
+                        // Coba cari kecamatan dan kelurahan
+                        for (let part of parts) {
+                            part = part.trim();
+                            for (let kec of ['Landasan Ulin', 'Cempaka', 'Banjarbaru Utara', 'Banjarbaru Selatan', 'Liang Anggang']) {
+                                if (part.toLowerCase().includes(kec.toLowerCase())) {
+                                    document.getElementById('kecamatan').value = kec;
+                                    break;
+                                }
+                            }
+                            for (let kel of validKelurahan) {
+                                if (part.toLowerCase().includes(kel.toLowerCase())) {
+                                    document.getElementById('kelurahan').value = kel;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    document.getElementById('loadingOverlay').classList.remove('show');
+                    alert('Koordinat berhasil ditemukan!');
+                } else {
+                    document.getElementById('loadingOverlay').classList.remove('show');
+                    alert('Alamat tidak ditemukan. Pastikan alamat lengkap dan benar!');
+                }
+            } catch (err) {
+                document.getElementById('loadingOverlay').classList.remove('show');
+                alert('Terjadi kesalahan: ' + err.message);
+            }
+        });
 
         async function reverseGeocode(lat, lng) {
             document.getElementById('loadingOverlay').classList.add('show');
@@ -1174,8 +1490,8 @@ $conn->close();
                             document.getElementById('jumlah_individu').value = data.data.jumlah_individu;
                             document.getElementById('korban_luka').value = data.data.korban_luka;
                             document.getElementById('korban_jiwa').value = data.data.korban_jiwa;
-                            const lat = parseFloat(data.data.latitude);
-                            const lng = parseFloat(data.data.longitude);
+                            const lat = parseFloat(data.data.latitude) || defaultLat;
+                            const lng = parseFloat(data.data.longitude) || defaultLng;
                             initMap(lat, lng);
                             updateCoordinatesFromLatLng(lat, lng);
                             if (data.data.foto) {
@@ -1239,8 +1555,11 @@ $conn->close();
             document.getElementById('dropdownMenu').classList.remove('show');
         });
 
-        // Initialize map
-        initMap();
+        // Initialize maps
+        document.addEventListener('DOMContentLoaded', function() {
+            initMapPage();
+            initMap(defaultLat, defaultLng);
+        });
     </script>
 </body>
 
