@@ -11,6 +11,7 @@ $role = isset($_SESSION['role']) ? $_SESSION['role'] : '';
 // Kita akan menggunakan path relatif dari folder halaman
 ?>
 
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" />
 <style>
     /* ========== SIDEBAR STYLES ========== */
     .sidebar-wrapper {
@@ -99,11 +100,27 @@ $role = isset($_SESSION['role']) ? $_SESSION['role'] : '';
         padding: 12px 16px;
         border-radius: 14px;
         text-decoration: none;
-        transition: all 0.3s ease;
+        transition: all 0.25s ease;
         font-size: 14px;
         font-weight: 500;
         color: #1A1A1A !important;
         font-family: 'Poppins', sans-serif;
+    }
+
+    .nav-link i,
+    .nav-link .material-symbols-outlined {
+        transition: transform 0.25s ease;
+    }
+
+    .nav-link:hover {
+        background: rgba(247, 184, 1, 0.12);
+        color: #E5A800;
+        transform: translateX(4px);
+    }
+
+    .nav-link:hover i,
+    .nav-link:hover .material-symbols-outlined {
+        transform: scale(1.15);
     }
 
     .nav-link i {
@@ -112,9 +129,12 @@ $role = isset($_SESSION['role']) ? $_SESSION['role'] : '';
         text-align: center;
     }
 
-    .nav-link:hover {
-        background: rgba(247, 184, 1, 0.12);
-        color: #E5A800;
+    .nav-link .material-symbols-outlined {
+        width: 22px;
+        font-size: 20px;
+        text-align: center;
+        line-height: 1;
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
     }
 
     .nav-link.active {
@@ -221,31 +241,37 @@ $role = isset($_SESSION['role']) ? $_SESSION['role'] : '';
                 </a>
             </li>
             <li class="nav-item">
-                <a href="/barres_698/superadmin/kejadian/" class="nav-link <?= strpos($current_page, 'kejadian') !== false ? 'active' : '' ?>">
+                <a href="/barres_698/superadmin/kejadian/" class="nav-link <?= strpos($current_url, '/superadmin/kejadian/') !== false ? 'active' : '' ?>">
                     <i class="fas fa-fire"></i>
                     <span>Data Kejadian</span>
                 </a>
             </li>
             <li class="nav-item">
-                <a href="/barres_698/superadmin/bpk/" class="nav-link <?= strpos($current_page, 'bpk') !== false ? 'active' : '' ?>">
+                <a href="/barres_698/superadmin/bpk/" class="nav-link <?= strpos($current_url, '/superadmin/bpk/') !== false ? 'active' : '' ?>">
                     <i class="fas fa-building"></i>
                     <span>Data BPK</span>
                 </a>
             </li>
             <li class="nav-item">
-                <a href="/barres_698/superadmin/hydran/" class="nav-link <?= strpos($current_page, 'bpk') !== false ? 'active' : '' ?>">
-                    <i class="fas fa-hydrant"></i>
+                <a href="/barres_698/superadmin/hydran/" class="nav-link <?= strpos($current_url, '/superadmin/hydran/') !== false ? 'active' : '' ?>">
+                    <span class="material-symbols-outlined">fire_hydrant</span>
                     <span>Data Hydran</span>
                 </a>
             </li>
             <li class="nav-item">
-                <a href="/barres_698/superadmin/heatmap/pengaturan.php" class="nav-link <?= strpos($current_page, 'heatmap') !== false ? 'active' : '' ?>">
+                <a href="/barres_698/superadmin/akun/" class="nav-link <?= strpos($current_url, '/superadmin/akun/') !== false ? 'active' : '' ?>">
+                    <span class="fas fa-user"></span>
+                    <span>Data Akun</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/barres_698/superadmin/heatmap/pengaturan.php" class="nav-link <?= strpos($current_url, '/superadmin/heatmap/') !== false ? 'active' : '' ?>">
                     <i class="fas fa-map-marked-alt"></i>
                     <span>Pengaturan Heatmap</span>
                 </a>
             </li>
             <li class="nav-item">
-                <a href="/barres_698/superadmin/laporan/" class="nav-link <?= strpos($current_page, 'laporan') !== false ? 'active' : '' ?>">
+                <a href="/barres_698/superadmin/laporan/" class="nav-link <?= strpos($current_url, '/superadmin/laporan/') !== false ? 'active' : '' ?>">
                     <i class="fas fa-file-alt"></i>
                     <span>Laporan</span>
                 </a>

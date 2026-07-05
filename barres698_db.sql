@@ -3,9 +3,9 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 15, 2026 at 08:53 AM
+-- Generation Time: Jul 05, 2026 at 03:34 AM
 -- Server version: 10.4.32-MariaDB
--- PHP Version: 8.2.12
+-- PHP Version: 8.0.30
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -107,7 +107,17 @@ CREATE TABLE `heatmap_settings` (
 --
 
 INSERT INTO `heatmap_settings` (`id`, `radius`, `blur`, `intensity`, `updated_at`) VALUES
-(1, 25, 15, 70, '2026-04-12 09:58:36');
+(1, 25, 15, 70, '2026-04-12 09:58:36'),
+(2, 44, 15, 70, '2026-06-20 09:41:48'),
+(3, 44, 15, 70, '2026-06-20 09:42:53'),
+(4, 44, 15, 70, '2026-06-20 09:44:03'),
+(5, 44, 15, 70, '2026-06-20 09:44:24'),
+(6, 44, 15, 70, '2026-06-20 10:22:30'),
+(7, 44, 15, 37, '2026-06-20 10:22:45'),
+(8, 14, 15, 37, '2026-06-20 10:22:56'),
+(9, 25, 15, 70, '2026-06-20 10:23:05'),
+(10, 25, 15, 70, '2026-06-20 10:25:32'),
+(11, 25, 15, 70, '2026-06-20 10:25:46');
 
 -- --------------------------------------------------------
 
@@ -275,6 +285,10 @@ CREATE TABLE `kejadian_kebakaran` (
   `jumlah_individu` int(11) DEFAULT 0,
   `korban_luka` int(11) DEFAULT 0,
   `korban_jiwa` int(11) DEFAULT 0,
+  `penyebab` varchar(100) DEFAULT NULL,
+  `penyebab_lainnya` text DEFAULT NULL,
+  `skala` enum('Kecil','Besar') DEFAULT NULL,
+  `keterangan` text DEFAULT NULL,
   `foto` varchar(255) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -283,14 +297,15 @@ CREATE TABLE `kejadian_kebakaran` (
 -- Dumping data for table `kejadian_kebakaran`
 --
 
-INSERT INTO `kejadian_kebakaran` (`id`, `waktu`, `latitude`, `longitude`, `alamat`, `kecamatan`, `kelurahan`, `jumlah_bangunan`, `jumlah_KK`, `jumlah_individu`, `korban_luka`, `korban_jiwa`, `foto`, `created_at`) VALUES
-(1, '2026-04-26 14:48:00', -3.46172100, 114.81119600, 'Jalan Raya Palam, Griya Mawar Asri, Loktabat Selatan, Banjarbaru, Kalimantan Selatan, Kalimantan, 70712, Indonesia', 'Banjarbaru Utara', 'Loktabat Selatan', 0, 0, 0, 0, 0, NULL, '2026-04-12 09:58:37'),
-(2, '2026-04-08 13:58:00', -3.46591000, 114.75725500, 'Guntung Manggis, Banjarbaru, Kalimantan Selatan, Kalimantan, 70724, Indonesia', 'Landasan Ulin', 'Guntung Manggis', 0, 0, 0, 0, 0, NULL, '2026-04-12 09:58:37'),
-(3, '2026-04-29 20:10:00', -3.45460540, 114.86671160, 'Sungai Ulin, Banjarbaru, Kalimantan Selatan, Kalimantan, 70714, Indonesia', 'Banjarbaru Utara', 'Sungai Ulin', 1, 0, 0, 0, 0, NULL, '2026-04-12 09:58:37'),
-(4, '2026-04-01 11:38:00', -3.49107400, 114.85190000, 'Cempaka, Banjarbaru, Kalimantan Selatan, Kalimantan, 70734, Indonesia', 'Cempaka', 'Cempaka', 6, 6, 19, 0, 0, NULL, '2026-04-12 09:58:37'),
-(5, '2023-01-02 11:00:00', -3.45500000, 114.81800000, 'Jl. A Yani Km 36', 'Banjarbaru Utara', 'Guntung Manggis', 1, 1, 4, 0, 0, NULL, '2026-04-12 09:58:37'),
-(6, '2026-04-24 08:17:00', -3.47230200, 114.82134300, 'Kemuning, Banjarbaru, Kalimantan Selatan, Kalimantan, 70731, Indonesia', 'Banjarbaru Selatan', 'Kemuning', 1, 1, 2, 0, 0, NULL, '2026-04-12 09:58:37'),
-(7, '2026-04-01 04:12:00', -3.44205020, 114.73338690, 'Jalan Jenderal Achmad Yani, Landasan Ulin Timur, Banjarbaru, Kalimantan Selatan, Kalimantan, 70723, Indonesia', 'Landasan Ulin', 'Landasan Ulin Tengah', 1, 2, 4, 0, 0, '20260426_153554_69edc05a634ae.jpeg', '2026-04-12 09:58:37');
+INSERT INTO `kejadian_kebakaran` (`id`, `waktu`, `latitude`, `longitude`, `alamat`, `kecamatan`, `kelurahan`, `jumlah_bangunan`, `jumlah_KK`, `jumlah_individu`, `korban_luka`, `korban_jiwa`, `penyebab`, `penyebab_lainnya`, `skala`, `keterangan`, `foto`, `created_at`) VALUES
+(1, '2026-04-26 14:48:00', -3.46172100, 114.81119600, 'Jalan Raya Palam, Griya Mawar Asri, Loktabat Selatan, Banjarbaru, Kalimantan Selatan, Kalimantan, 70712, Indonesia', 'Banjarbaru Utara', 'Loktabat Selatan', 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, '2026-04-12 09:58:37'),
+(2, '2026-04-08 13:58:00', -3.46591000, 114.75725500, 'Guntung Manggis, Banjarbaru, Kalimantan Selatan, Kalimantan, 70724, Indonesia', 'Landasan Ulin', 'Guntung Manggis', 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, '2026-04-12 09:58:37'),
+(3, '2026-04-29 20:10:00', -3.45460540, 114.86671160, 'Sungai Ulin, Banjarbaru, Kalimantan Selatan, Kalimantan, 70714, Indonesia', 'Banjarbaru Utara', 'Sungai Ulin', 1, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, '2026-04-12 09:58:37'),
+(4, '2026-04-01 11:38:00', -3.49107400, 114.85190000, 'Cempaka, Banjarbaru, Kalimantan Selatan, Kalimantan, 70734, Indonesia', 'Cempaka', 'Cempaka', 6, 6, 19, 0, 0, NULL, NULL, NULL, NULL, NULL, '2026-04-12 09:58:37'),
+(5, '2026-03-01 10:32:00', -3.47326714, 114.79804234, 'Jl. Pembataan Guntung Paring Rt.36/07, Kel. Guntung Manggis, Kec. Landasan Ulin', 'Landasan Ulin', 'Guntung Manggis', 1, 0, 0, 0, 0, NULL, NULL, NULL, NULL, '20260620_154228_6a364464e2a70.jpeg', '2026-04-12 09:58:37'),
+(6, '2026-04-24 08:17:00', -3.47230200, 114.82134300, 'Kemuning, Banjarbaru, Kalimantan Selatan, Kalimantan, 70731, Indonesia', 'Banjarbaru Selatan', 'Kemuning', 1, 1, 2, 0, 0, NULL, NULL, NULL, NULL, NULL, '2026-04-12 09:58:37'),
+(7, '2026-04-01 04:12:00', -3.44205020, 114.73338690, 'Jalan Jenderal Achmad Yani, Landasan Ulin Timur, Banjarbaru, Kalimantan Selatan, Kalimantan, 70723, Indonesia', 'Landasan Ulin', 'Landasan Ulin Tengah', 1, 2, 4, 0, 0, NULL, NULL, NULL, NULL, '20260426_153554_69edc05a634ae.jpeg', '2026-04-12 09:58:37'),
+(8, '2026-03-05 19:55:00', -3.44165240, 114.83981610, 'JL. Garuda Rt.03/04 Kel. Komet Kec. Banjarbaru Utara', 'Banjarbaru Utara', 'Komet', 1, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, '2026-06-28 09:06:00');
 
 -- --------------------------------------------------------
 
@@ -301,22 +316,25 @@ INSERT INTO `kejadian_kebakaran` (`id`, `waktu`, `latitude`, `longitude`, `alama
 CREATE TABLE `users` (
   `id` int(11) NOT NULL,
   `username` varchar(50) NOT NULL,
+  `nama` varchar(100) DEFAULT NULL,
   `password` varchar(255) NOT NULL,
   `no_hp` varchar(15) DEFAULT NULL,
   `role` enum('super_admin','admin_bpk') NOT NULL,
   `bpk_id` int(11) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`id`, `username`, `password`, `no_hp`, `role`, `bpk_id`, `created_at`) VALUES
-(5, 'superadmin', '$2y$10$RSeBrsl2uu8PUFXOVZF0/OrclLt3PFFRBnT7QGXx3Qt5v.5YCB7dm', '081234567890', 'super_admin', NULL, '2026-04-25 03:02:50'),
-(6, 'admin_bpk1', '$2y$10$RSeBrsl2uu8PUFXOVZF0/OrclLt3PFFRBnT7QGXx3Qt5v.5YCB7dm', '081234567891', 'admin_bpk', 1, '2026-04-25 03:02:50'),
-(7, 'admin_bpk2', '$2y$10$RSeBrsl2uu8PUFXOVZF0/OrclLt3PFFRBnT7QGXx3Qt5v.5YCB7dm', '081234567892', 'admin_bpk', 2, '2026-04-25 03:02:50'),
-(8, 'admin_bpk3', '$2y$10$RSeBrsl2uu8PUFXOVZF0/OrclLt3PFFRBnT7QGXx3Qt5v.5YCB7dm', '081234567893', 'admin_bpk', 3, '2026-04-25 03:02:50');
+INSERT INTO `users` (`id`, `username`, `nama`, `password`, `no_hp`, `role`, `bpk_id`, `created_at`, `updated_at`) VALUES
+(5, 'superadmin', 'yusfi', '$2y$10$RSeBrsl2uu8PUFXOVZF0/OrclLt3PFFRBnT7QGXx3Qt5v.5YCB7dm', '081234567890', 'super_admin', NULL, '2026-04-25 03:02:50', '2026-07-04 11:03:26'),
+(6, 'admin_bpk1', NULL, '$2y$10$RSeBrsl2uu8PUFXOVZF0/OrclLt3PFFRBnT7QGXx3Qt5v.5YCB7dm', '081234567891', 'admin_bpk', 1, '2026-04-25 03:02:50', NULL),
+(7, 'admin_bpk2', NULL, '$2y$10$RSeBrsl2uu8PUFXOVZF0/OrclLt3PFFRBnT7QGXx3Qt5v.5YCB7dm', '081234567892', 'admin_bpk', 2, '2026-04-25 03:02:50', NULL),
+(8, 'admin_bpk3', NULL, '$2y$10$RSeBrsl2uu8PUFXOVZF0/OrclLt3PFFRBnT7QGXx3Qt5v.5YCB7dm', '081234567893', 'admin_bpk', 3, '2026-04-25 03:02:50', NULL),
+(9, 'superadmin2', 'abue', '$2y$10$fiItG1YuM.X2.UbbFkxNr.djDKfKjyIyXtLm/g4srcjj6AlfPjy0O', '081264905183', 'super_admin', NULL, '2026-07-04 11:03:15', NULL);
 
 --
 -- Indexes for dumped tables
@@ -386,7 +404,7 @@ ALTER TABLE `bpk`
 -- AUTO_INCREMENT for table `heatmap_settings`
 --
 ALTER TABLE `heatmap_settings`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `hydrant`
@@ -398,13 +416,13 @@ ALTER TABLE `hydrant`
 -- AUTO_INCREMENT for table `kejadian_kebakaran`
 --
 ALTER TABLE `kejadian_kebakaran`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- Constraints for dumped tables

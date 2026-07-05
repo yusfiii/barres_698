@@ -10,12 +10,17 @@ $user = getCurrentUser();
 $message = '';
 $messageType = '';
 
+// Filter parameters
+$search = isset($_GET['search']) ? $_GET['search'] : '';
+$filter_kecamatan = isset($_GET['kecamatan']) ? $_GET['kecamatan'] : '';
+$filter_bulan = isset($_GET['bulan']) ? $_GET['bulan'] : '';
+
 // Get total BPK untuk sidebar
 $conn = getConnection();
 $total_bpk = $conn->query("SELECT COUNT(*) as total FROM bpk")->fetch_assoc()['total'];
 $conn->close();
 
-// Include sidebar dari folder includes
+// Include sidebar
 include __DIR__ . '/../../includes/sidebar.php';
 
 // Handle delete
@@ -49,7 +54,7 @@ if (isset($_GET['delete'])) {
     $conn->close();
 }
 
-// Handle Geocoding - Update koordinat dari alamat
+// Handle Geocoding
 if (isset($_GET['geocode']) && isset($_GET['id'])) {
     $id = intval($_GET['id']);
     $conn = getConnection();
@@ -82,7 +87,7 @@ if (isset($_GET['geocode']) && isset($_GET['id'])) {
     $conn->close();
 }
 
-// Handle Bulk Geocoding - Update semua data yang tidak punya koordinat
+// Handle Bulk Geocoding
 if (isset($_GET['bulk_geocode'])) {
     $conn = getConnection();
     $query = "SELECT id, alamat FROM kejadian_kebakaran WHERE latitude IS NULL OR latitude = 0 OR longitude IS NULL OR longitude = 0";
@@ -111,10 +116,40 @@ if (isset($_GET['bulk_geocode'])) {
     $messageType = $updated > 0 ? "success" : "danger";
 }
 
-// Get all incidents dengan koordinat untuk peta
+// Get incidents dengan filter
 $conn = getConnection();
-$query = "SELECT * FROM kejadian_kebakaran ORDER BY waktu DESC";
-$result = $conn->query($query);
+$query = "SELECT * FROM kejadian_kebakaran WHERE 1=1";
+$params = [];
+$types = "";
+
+if (!empty($search)) {
+    $query .= " AND (alamat LIKE ? OR kecamatan LIKE ? OR kelurahan LIKE ?)";
+    $searchParam = "%$search%";
+    $params[] = $searchParam;
+    $params[] = $searchParam;
+    $params[] = $searchParam;
+    $types .= "sss";
+}
+if (!empty($filter_kecamatan)) {
+    $query .= " AND kecamatan = ?";
+    $params[] = $filter_kecamatan;
+    $types .= "s";
+}
+if (!empty($filter_bulan)) {
+    $query .= " AND DATE_FORMAT(waktu, '%Y-%m') = ?";
+    $params[] = $filter_bulan;
+    $types .= "s";
+}
+
+$query .= " ORDER BY waktu DESC";
+
+$stmt = $conn->prepare($query);
+if (!empty($params)) {
+    $stmt->bind_param($types, ...$params);
+}
+$stmt->execute();
+$result = $stmt->get_result();
+
 $incidents = [];
 $coordinates = [];
 while ($row = $result->fetch_assoc()) {
@@ -129,6 +164,27 @@ while ($row = $result->fetch_assoc()) {
         ];
     }
 }
+$stmt->close();
+
+// Statistik
+$total_kejadian = count($incidents);
+$total_luka = array_sum(array_column($incidents, 'korban_luka'));
+$total_jiwa = array_sum(array_column($incidents, 'korban_jiwa'));
+$total_bangunan = array_sum(array_column($incidents, 'jumlah_bangunan'));
+$total_kk = array_sum(array_column($incidents, 'jumlah_KK'));
+
+// Data untuk dropdown kelurahan
+$kelurahan_data = [
+    'Banjarbaru Selatan' => ['Guntung Paikat', 'Kemuning', 'Loktabat Selatan', 'Sungai Besar'],
+    'Banjarbaru Utara' => ['Komet', 'Loktabat Utara', 'Mentaos', 'Sungai Ulin'],
+    'Cempaka' => ['Bangkal', 'Cempaka', 'Palam', 'Sungai Tiung'],
+    'Landasan Ulin' => ['Guntung Manggis', 'Guntung Payung', 'Landasan Ulin Timur', 'Syamsudin Noor'],
+    'Liang Anggang' => ['Landasan Ulin Barat', 'Landasan Ulin Selatan', 'Landasan Ulin Tengah', 'Landasan Ulin Utara']
+];
+
+// List kecamatan untuk filter
+$kecamatan_list = $conn->query("SELECT DISTINCT kecamatan FROM kejadian_kebakaran WHERE kecamatan IS NOT NULL ORDER BY kecamatan");
+
 $conn->close();
 ?>
 
@@ -144,92 +200,24 @@ $conn->close();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Leaflet Marker Cluster -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
 
     <style>
-        /* ... style yang sama seperti sebelumnya ... */
-        /* Tambahkan style untuk peta di halaman */
-        
-        .map-container-page {
-            height: 400px;
-            border-radius: 20px;
-            overflow: hidden;
-            margin-bottom: 20px;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-        }
-        
-        #mapPage {
-            height: 100%;
-            width: 100%;
-        }
-        
-        .badge-no-coord {
-            background: rgba(255, 193, 7, 0.15);
-            color: #e6a000;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 10px;
-        }
-        
-        .btn-geocode {
-            background: rgba(23, 162, 184, 0.1);
-            border: 1px solid rgba(23, 162, 184, 0.3);
-            padding: 4px 10px;
-            border-radius: 8px;
-            font-size: 11px;
-            color: #17a2b8;
-            transition: all 0.2s;
-            text-decoration: none;
-        }
-        
-        .btn-geocode:hover {
-            background: rgba(23, 162, 184, 0.2);
-            color: #17a2b8;
-        }
-        
-        .btn-geocode-bulk {
-            background: rgba(40, 167, 69, 0.1);
-            border: 1px solid rgba(40, 167, 69, 0.3);
-            padding: 6px 14px;
-            border-radius: 10px;
-            font-size: 12px;
-            color: #28a745;
-            transition: all 0.2s;
-            text-decoration: none;
-        }
-        
-        .btn-geocode-bulk:hover {
-            background: rgba(40, 167, 69, 0.2);
-            color: #28a745;
-        }
-
-        /* Style yang sama seperti sebelumnya */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Poppins', sans-serif;
             background: #D1D5DB;
             background: linear-gradient(135deg, #E5E7EB 0%, #D1D5DB 100%);
             min-height: 100vh;
         }
-
-        .main-content {
-            margin-left: 280px;
-            padding: 24px 32px;
-            min-height: 100vh;
-        }
-
+        .main-content { margin-left: 280px; padding: 24px 32px; min-height: 100vh; }
+        
+        /* Top Navbar */
         .top-navbar {
             background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0,0,0,0.08);
             border-radius: 20px;
             padding: 12px 24px;
             margin-bottom: 28px;
@@ -237,373 +225,53 @@ $conn->close();
             justify-content: space-between;
             align-items: center;
         }
-
-        .page-title h2 {
-            font-size: 20px;
-            font-weight: 600;
-            margin: 0;
-            color: #1A1A1A;
-        }
-
-        .page-title p {
-            font-size: 13px;
-            margin: 4px 0 0 0;
-            color: #666;
-        }
-
-        .user-info {
-            text-align: right;
-        }
-
-        .user-info .username {
-            font-size: 14px;
-            font-weight: 600;
-            color: #1A1A1A;
-        }
-
-        .user-info .role {
-            font-size: 11px;
-            color: #F7B801;
-        }
-
+        .page-title h2 { font-size: 20px; font-weight: 600; margin: 0; color: #1A1A1A; }
+        .page-title p { font-size: 13px; margin: 4px 0 0 0; color: #666; }
+        .user-info { text-align: right; }
+        .user-info .username { font-size: 14px; font-weight: 600; color: #1A1A1A; }
+        .user-info .role { font-size: 11px; color: #F7B801; }
         .user-avatar {
-            width: 44px;
-            height: 44px;
+            width: 44px; height: 44px;
             background: linear-gradient(135deg, #F7B801, #E5A800);
             border-radius: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: transform 0.2s;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: transform 0.2s;
         }
-
-        .user-avatar:hover {
-            transform: scale(1.05);
-        }
-
-        .user-avatar i {
-            font-size: 22px;
-            color: #1A1A1A;
-        }
-
+        .user-avatar:hover { transform: scale(1.05); }
+        .user-avatar i { font-size: 22px; color: #1A1A1A; }
+        
         .dropdown-menu-custom {
-            position: absolute;
-            top: 80px;
-            right: 32px;
-            background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            border-radius: 16px;
-            padding: 12px 0;
-            min-width: 180px;
-            display: none;
-            z-index: 1000;
+            position: absolute; top: 80px; right: 32px;
+            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            border-radius: 16px; padding: 12px 0; min-width: 180px;
+            display: none; z-index: 1000;
         }
-
-        .dropdown-menu-custom.show {
-            display: block;
-            animation: fadeIn 0.2s ease;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
+        .dropdown-menu-custom.show { display: block; animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .dropdown-menu-custom a {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 20px;
-            text-decoration: none;
-            transition: all 0.2s;
-            font-size: 13px;
-            color: #333;
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 20px; text-decoration: none;
+            transition: all 0.2s; font-size: 13px; color: #333;
         }
+        .dropdown-menu-custom a:hover { background: rgba(247,184,1,0.1); color: #F7B801; }
+        .dropdown-divider { margin: 8px 0; border-color: #E0E0E0; }
 
-        .dropdown-menu-custom a:hover {
-            background: rgba(247, 184, 1, 0.1);
-            color: #F7B801;
-        }
-
-        .dropdown-divider {
-            margin: 8px 0;
-            border-color: #E0E0E0;
-        }
-
-        .btn-tambah {
-            background: linear-gradient(135deg, #F7B801, #E5A800);
-            border: none;
-            padding: 10px 20px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 13px;
-            color: #1A1A1A;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn-tambah:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(247, 184, 1, 0.3);
-        }
-
-        .card-custom {
+        /* Filter Section */
+        .filter-section {
             background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0,0,0,0.08);
             border-radius: 20px;
-            overflow: hidden;
+            padding: 20px 24px;
             margin-bottom: 28px;
         }
-
-        .card-header-custom {
-            padding: 18px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #FFFFFF;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-        }
-
-        .card-header-custom h3 {
-            font-size: 16px;
-            font-weight: 600;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: #F7B801;
-        }
-
-        .table-custom {
-            width: 100%;
-            margin-bottom: 0;
-            color: #1A1A1A;
-        }
-
-        .table-custom thead th {
-            padding: 14px 16px;
-            font-size: 13px;
-            font-weight: 600;
-            background: #F8F8F8;
-            color: #1A1A1A;
-            border-bottom: 1px solid #E0E0E0;
-        }
-
-        .table-custom tbody td {
-            padding: 12px 16px;
-            font-size: 13px;
-            vertical-align: middle;
-            border-bottom: 1px solid #E0E0E0;
-        }
-
-        .table-custom tbody tr:hover {
-            background: rgba(247, 184, 1, 0.03);
-        }
-
-        .foto-thumb {
-            width: 50px;
-            height: 50px;
-            object-fit: cover;
-            border-radius: 10px;
-            background: #F5F5F5;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .btn-action {
-            background: transparent;
-            border: none;
-            padding: 6px 10px;
-            border-radius: 10px;
-            cursor: pointer;
-        }
-
-        .btn-action i {
-            font-size: 14px;
-            color: #999;
-        }
-
-        .btn-action:hover i {
-            color: #F7B801;
-        }
-
-        .btn-action.danger:hover i {
-            color: #dc3545;
-        }
-
-        .badge-status {
-            background: rgba(247, 184, 1, 0.15);
-            color: #B8860B;
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 11px;
-            display: inline-block;
-        }
-
-        .badge-jiwa {
-            background: rgba(220, 53, 69, 0.1);
-            color: #dc3545;
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 11px;
-            display: inline-block;
-        }
-
-        .alert-custom {
-            border-radius: 14px;
-            padding: 12px 18px;
-            margin-bottom: 20px;
-            animation: slideDown 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            border-left: 4px solid #28a745;
-            color: #155724;
-        }
-
-        .alert-danger {
-            background: #f8d7da;
-            border-left: 4px solid #dc3545;
-            color: #721c24;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* Modal Floating - style sama seperti sebelumnya */
-        .modal-floating {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(8px);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-floating.show {
-            display: flex;
-            animation: modalFadeIn 0.3s ease;
-        }
-
-        @keyframes modalFadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
-        }
-
-        .modal-floating-content {
-            background: #FFFFFF;
-            border-radius: 28px;
-            width: 95%;
-            max-width: 1200px;
-            max-height: 90vh;
-            overflow-y: auto;
-            animation: modalFlyIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-
-        @keyframes modalFlyIn {
-            from {
-                opacity: 0;
-                transform: scale(0.95) translateY(-30px);
-            }
-            to {
-                opacity: 1;
-                transform: scale(1) translateY(0);
-            }
-        }
-
-        .modal-floating-header {
-            padding: 20px 28px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            background: #FFFFFF;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-        }
-
-        .modal-floating-header h4 {
-            font-size: 20px;
-            font-weight: 600;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: #F7B801;
-        }
-
-        .close-modal {
-            background: transparent;
-            border: none;
-            width: 36px;
-            height: 36px;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.2s;
-            color: #666;
-        }
-
-        .close-modal:hover {
-            background: rgba(247, 184, 1, 0.1);
-            color: #F7B801;
-        }
-
-        .modal-floating-body {
-            padding: 28px;
-            position: relative;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
         .form-label {
             font-size: 13px;
             font-weight: 600;
             margin-bottom: 8px;
-            display: block;
             color: #1A1A1A;
         }
-
-        .form-label .required {
-            color: #F7B801;
-        }
-
-        .form-control,
-        .form-select {
+        .form-control, .form-select {
             background: #F8F8F8;
             border: 1px solid #E0E0E0;
             color: #1A1A1A;
@@ -612,181 +280,161 @@ $conn->close();
             font-size: 13px;
             font-family: 'Poppins', sans-serif;
         }
-
-        .form-control:focus,
-        .form-select:focus {
+        .form-control:focus, .form-select:focus {
             border-color: #F7B801;
-            box-shadow: 0 0 0 3px rgba(247, 184, 1, 0.1);
+            box-shadow: 0 0 0 3px rgba(247,184,1,0.1);
             outline: none;
         }
-
-        .map-container {
-            height: 400px;
-            border-radius: 16px;
-            overflow: hidden;
-            margin-bottom: 20px;
-        }
-
-        #map {
-            height: 100%;
-            width: 100%;
-        }
-
-        .coordinate-info {
-            background: #F8F9FA;
-            border-radius: 14px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-
-        .coordinate-info p {
-            margin: 0 0 10px 0;
-            font-size: 13px;
-            font-weight: 600;
-            color: #F7B801;
-        }
-
-        .coordinate-input-group {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        .coordinate-input-group .form-control {
-            flex: 1;
-        }
-
-        .btn-location {
-            background: rgba(247, 184, 1, 0.1);
-            border: 1px solid rgba(247, 184, 1, 0.3);
-            padding: 10px 16px;
-            border-radius: 14px;
-            font-size: 13px;
-            transition: all 0.2s;
-            cursor: pointer;
-            color: #F7B801;
-        }
-
-        .btn-location:hover {
-            background: #F7B801;
-            color: #1A1A1A;
-        }
-
-        .btn-submit {
+        .btn-gold {
             background: linear-gradient(135deg, #F7B801, #E5A800);
             border: none;
-            padding: 12px 24px;
-            border-radius: 14px;
-            font-weight: 600;
-            transition: all 0.2s;
-            color: #1A1A1A;
-        }
-
-        .btn-submit:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(247, 184, 1, 0.3);
-        }
-
-        .btn-cancel {
-            background: transparent;
-            padding: 12px 24px;
-            border-radius: 14px;
-            font-weight: 600;
-            transition: all 0.2s;
-            color: #666;
-            border: 1px solid #ccc;
-        }
-
-        .btn-cancel:hover {
-            background: rgba(0, 0, 0, 0.05);
-        }
-
-        .image-preview {
-            width: 100px;
-            height: 100px;
-            object-fit: cover;
+            padding: 10px 20px;
             border-radius: 12px;
-            margin-top: 10px;
-        }
-
-        .loading-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            border-radius: 28px;
-            z-index: 20;
-        }
-
-        .loading-overlay.show {
-            display: flex;
-        }
-
-        .info-text {
-            font-size: 12px;
-            margin-top: 5px;
-            color: #666;
-        }
-
-        .dataTables_wrapper .dataTables_length select,
-        .dataTables_wrapper .dataTables_filter input {
-            background: #F8F8F8;
-            border: 1px solid #E0E0E0;
+            font-weight: 600;
+            font-size: 13px;
             color: #1A1A1A;
-            border-radius: 10px;
-            padding: 6px 12px;
+            transition: all 0.3s ease;
+        }
+        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(247,184,1,0.3); color: #1A1A1A; }
+
+        /* Stats Cards */
+        .stat-card {
+            background: #FFFFFF;
+            border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 20px;
+            padding: 20px;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+        .stat-card:hover { transform: translateY(-4px); border-color: #F7B801; box-shadow: 0 8px 20px rgba(0,0,0,0.06); }
+        .stat-icon {
+            width: 55px; height: 55px;
+            background: rgba(247,184,1,0.1);
+            border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 12px;
+        }
+        .stat-icon i { font-size: 28px; color: #F7B801; }
+        .stat-number { font-size: 32px; font-weight: 700; margin-bottom: 5px; color: #1A1A1A; }
+        .stat-label { font-size: 13px; font-weight: 500; color: #666; }
+
+        /* Buttons */
+        .btn-tambah {
+            background: linear-gradient(135deg, #F7B801, #E5A800);
+            border: none; padding: 10px 20px; border-radius: 12px;
+            font-weight: 600; font-size: 13px; color: #1A1A1A;
+            transition: all 0.3s ease; display: flex; align-items: center; gap: 8px;
+        }
+        .btn-tambah:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(247,184,1,0.3); }
+
+        .card-custom {
+            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 20px; overflow: hidden; margin-bottom: 28px;
+        }
+        .card-header-custom {
+            padding: 18px 24px; display: flex; justify-content: space-between;
+            align-items: center; background: #FFFFFF;
+            border-bottom: 1px solid rgba(0,0,0,0.08);
+        }
+        .card-header-custom h3 {
+            font-size: 16px; font-weight: 600; margin: 0;
+            display: flex; align-items: center; gap: 10px; color: #F7B801;
         }
 
-        .dataTables_wrapper .dataTables_info,
-        .dataTables_wrapper .dataTables_paginate {
-            color: #666;
-        }
+        .map-container-page { height: 400px; border-radius: 20px; overflow: hidden; margin-bottom: 20px; border: 1px solid rgba(0,0,0,0.08); }
+        #mapPage { height: 100%; width: 100%; }
 
-        .dataTables_wrapper .dataTables_paginate .paginate_button {
-            background: #F8F8F8 !important;
-            border-color: #E0E0E0 !important;
-            color: #1A1A1A !important;
+        .table-custom { width: 100%; margin-bottom: 0; color: #1A1A1A; }
+        .table-custom thead th {
+            padding: 14px 16px; font-size: 13px; font-weight: 600;
+            background: #F8F8F8; color: #1A1A1A; border-bottom: 1px solid #E0E0E0;
         }
+        .table-custom tbody td {
+            padding: 12px 16px; font-size: 13px; vertical-align: middle;
+            border-bottom: 1px solid #E0E0E0;
+        }
+        .table-custom tbody tr:hover { background: rgba(247,184,1,0.03); }
 
-        .dataTables_wrapper .dataTables_paginate .paginate_button.current {
-            background: #F7B801 !important;
-            color: #1A1A1A !important;
-        }
+        .foto-thumb { width: 50px; height: 50px; object-fit: cover; border-radius: 10px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; }
+        .btn-action { background: transparent; border: none; padding: 6px 10px; border-radius: 10px; cursor: pointer; }
+        .btn-action i { font-size: 14px; color: #999; }
+        .btn-action:hover i { color: #F7B801; }
+        .btn-action.danger:hover i { color: #dc3545; }
+
+        .badge-status { background: rgba(247,184,1,0.15); color: #B8860B; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; }
+        .badge-jiwa { background: rgba(220,53,69,0.1); color: #dc3545; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; }
+        .badge-no-coord { background: rgba(255,193,7,0.15); color: #e6a000; padding: 2px 8px; border-radius: 12px; font-size: 10px; }
+        .badge-skala-besar { background: rgba(220,53,69,0.1); color: #dc3545; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; }
+        .badge-skala-kecil { background: rgba(40,167,69,0.1); color: #1e7e34; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; }
+
+        .btn-geocode { background: rgba(23,162,184,0.1); border: 1px solid rgba(23,162,184,0.3); padding: 4px 10px; border-radius: 8px; font-size: 11px; color: #17a2b8; transition: all 0.2s; text-decoration: none; }
+        .btn-geocode:hover { background: rgba(23,162,184,0.2); color: #17a2b8; }
+        .btn-geocode-bulk { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.3); padding: 6px 14px; border-radius: 10px; font-size: 12px; color: #28a745; transition: all 0.2s; text-decoration: none; }
+        .btn-geocode-bulk:hover { background: rgba(40,167,69,0.2); color: #28a745; }
+
+        .alert-custom { border-radius: 14px; padding: 12px 18px; margin-bottom: 20px; animation: slideDown 0.3s ease; display: flex; align-items: center; gap: 12px; }
+        .alert-success { background: #d4edda; border-left: 4px solid #28a745; color: #155724; }
+        .alert-danger { background: #f8d7da; border-left: 4px solid #dc3545; color: #721c24; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Modal Floating */
+        .modal-floating { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 2000; align-items: center; justify-content: center; }
+        .modal-floating.show { display: flex; animation: modalFadeIn 0.3s ease; }
+        @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .modal-floating-content { background: #FFFFFF; border-radius: 28px; width: 95%; max-width: 1200px; max-height: 90vh; overflow-y: auto; animation: modalFlyIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes modalFlyIn { from { opacity: 0; transform: scale(0.95) translateY(-30px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .modal-floating-header { padding: 20px 28px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; background: #FFFFFF; border-bottom: 1px solid rgba(0,0,0,0.08); }
+        .modal-floating-header h4 { font-size: 20px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 10px; color: #F7B801; }
+        .close-modal { background: transparent; border: none; width: 36px; height: 36px; border-radius: 12px; cursor: pointer; transition: all 0.2s; color: #666; }
+        .close-modal:hover { background: rgba(247,184,1,0.1); color: #F7B801; }
+        .modal-floating-body { padding: 28px; position: relative; }
+
+        .form-group { margin-bottom: 20px; }
+        .form-label { font-size: 13px; font-weight: 600; margin-bottom: 8px; display: block; color: #1A1A1A; }
+        .form-label .required { color: #F7B801; }
+        .form-control, .form-select { background: #F8F8F8; border: 1px solid #E0E0E0; color: #1A1A1A; border-radius: 12px; padding: 10px 14px; font-size: 13px; font-family: 'Poppins', sans-serif; }
+        .form-control:focus, .form-select:focus { border-color: #F7B801; box-shadow: 0 0 0 3px rgba(247,184,1,0.1); outline: none; }
+
+        .map-container { height: 400px; border-radius: 16px; overflow: hidden; margin-bottom: 20px; }
+        #map { height: 100%; width: 100%; }
+
+        .coordinate-info { background: #F8F9FA; border-radius: 14px; padding: 15px; margin-bottom: 20px; }
+        .coordinate-info p { margin: 0 0 10px 0; font-size: 13px; font-weight: 600; color: #F7B801; }
+        .coordinate-input-group { display: flex; gap: 15px; margin-bottom: 15px; }
+        .coordinate-input-group .form-control { flex: 1; }
+        .btn-location { background: rgba(247,184,1,0.1); border: 1px solid rgba(247,184,1,0.3); padding: 10px 16px; border-radius: 14px; font-size: 13px; transition: all 0.2s; cursor: pointer; color: #F7B801; }
+        .btn-location:hover { background: #F7B801; color: #1A1A1A; }
+
+        .btn-submit { background: linear-gradient(135deg, #F7B801, #E5A800); border: none; padding: 12px 24px; border-radius: 14px; font-weight: 600; transition: all 0.2s; color: #1A1A1A; }
+        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(247,184,1,0.3); }
+        .btn-cancel { background: transparent; padding: 12px 24px; border-radius: 14px; font-weight: 600; transition: all 0.2s; color: #666; border: 1px solid #ccc; }
+        .btn-cancel:hover { background: rgba(0,0,0,0.05); }
+
+        .image-preview { width: 100px; height: 100px; object-fit: cover; border-radius: 12px; margin-top: 10px; }
+        .loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; border-radius: 28px; z-index: 20; }
+        .loading-overlay.show { display: flex; }
+        .info-text { font-size: 12px; margin-top: 5px; color: #666; }
+
+        .dataTables_wrapper .dataTables_length select, .dataTables_wrapper .dataTables_filter input { background: #F8F8F8; border: 1px solid #E0E0E0; color: #1A1A1A; border-radius: 10px; padding: 6px 12px; }
+        .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #666; }
+        .dataTables_wrapper .dataTables_paginate .paginate_button { background: #F8F8F8 !important; border-color: #E0E0E0 !important; color: #1A1A1A !important; }
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current { background: #F7B801 !important; color: #1A1A1A !important; }
+
+        #penyebab_lainnya_container { display: none; margin-top: 8px; }
 
         @media (max-width: 768px) {
-            .main-content {
-                margin-left: 0;
-                padding: 16px;
-            }
-
-            .coordinate-input-group {
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .card-header-custom {
-                flex-direction: column;
-                gap: 12px;
-                align-items: flex-start;
-            }
-
-            .map-container-page {
-                height: 250px;
-            }
+            .main-content { margin-left: 0; padding: 16px; }
+            .coordinate-input-group { flex-direction: column; gap: 10px; }
+            .card-header-custom { flex-direction: column; gap: 12px; align-items: flex-start; }
+            .map-container-page { height: 250px; }
+            .filter-section .row { flex-direction: column; gap: 12px; }
         }
     </style>
 </head>
 
 <body>
 
-    <!-- Sidebar sudah di-include dari includes/sidebar.php -->
-
-    <!-- Main Content -->
+    <!-- Sidebar sudah di-include -->
     <div class="main-content">
         <div class="top-navbar">
             <div class="page-title">
@@ -818,7 +466,87 @@ $conn->close();
             </div>
         <?php endif; ?>
 
-        <!-- PETA SEBARAN TITIK KEJADIAN -->
+        <!-- FILTER SECTION -->
+        <div class="filter-section">
+            <form method="GET" action="" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label"><i class="fas fa-search me-1"></i>Cari Kejadian</label>
+                    <input type="text" name="search" class="form-control" placeholder="Alamat, Kecamatan, Kelurahan..." value="<?= htmlspecialchars($search) ?>">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label"><i class="fas fa-map-marker-alt me-1"></i>Kecamatan</label>
+                    <select name="kecamatan" class="form-select">
+                        <option value="">Semua Kecamatan</option>
+                        <?php
+                        if ($kecamatan_list && $kecamatan_list->num_rows > 0):
+                            mysqli_data_seek($kecamatan_list, 0);
+                            while ($kec = $kecamatan_list->fetch_assoc()):
+                        ?>
+                            <option value="<?= htmlspecialchars($kec['kecamatan']) ?>" <?= $filter_kecamatan == $kec['kecamatan'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($kec['kecamatan']) ?>
+                            </option>
+                        <?php endwhile; endif; ?>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label"><i class="fas fa-calendar me-1"></i>Periode Bulan</label>
+                    <input type="month" name="bulan" class="form-control" value="<?= htmlspecialchars($filter_bulan) ?>">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn-gold w-100">
+                        <i class="fas fa-filter"></i> Tampilkan
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- STATISTIK CARD -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-2 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-fire"></i></div>
+                    <div class="stat-number"><?= $total_kejadian ?></div>
+                    <div class="stat-label">Total Kejadian</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-building"></i></div>
+                    <div class="stat-number"><?= $total_bangunan ?></div>
+                    <div class="stat-label">Bangunan</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-users"></i></div>
+                    <div class="stat-number"><?= $total_kk ?></div>
+                    <div class="stat-label">KK Terdampak</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-user-injured"></i></div>
+                    <div class="stat-number"><?= $total_luka ?></div>
+                    <div class="stat-label">Korban Luka</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-skull"></i></div>
+                    <div class="stat-number"><?= $total_jiwa ?></div>
+                    <div class="stat-label">Korban Jiwa</div>
+                </div>
+            </div>
+            <div class="col-md-2 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-map-pin"></i></div>
+                    <div class="stat-number"><?= count($coordinates) ?></div>
+                    <div class="stat-label">Titik Koordinat</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PETA SEBARAN -->
         <div class="card-custom">
             <div class="card-header-custom">
                 <h3><i class="fas fa-map-marked-alt"></i> Peta Sebaran Kejadian</h3>
@@ -849,21 +577,20 @@ $conn->close();
                     </div>
                 <?php endif; ?>
                 
-                <!-- Tombol Geocoding -->
                 <div class="d-flex gap-2 mt-3 flex-wrap">
                     <?php if ($no_coord > 0): ?>
                         <a href="?bulk_geocode=1" class="btn-geocode-bulk" onclick="return confirm('Proses ini akan mencoba mencari koordinat untuk semua data yang belum memiliki koordinat. Lanjutkan?')">
                             <i class="fas fa-sync-alt me-1"></i> Geocoding Massal (<?= $no_coord ?> data)
                         </a>
                     <?php endif; ?>
-                    <button class="btn-geocode-bulk" onclick="refreshMap()" style="background:rgba(23,162,184,0.1); border-color:rgba(23,162,184,0.3); color:#17a2b8;">
+                    <button class="btn-geocode-bulk" onclick="location.reload()" style="background:rgba(23,162,184,0.1); border-color:rgba(23,162,184,0.3); color:#17a2b8;">
                         <i class="fas fa-redo me-1"></i> Refresh Peta
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- Tabel Data -->
+        <!-- TABEL DATA -->
         <div class="card-custom">
             <div class="card-header-custom">
                 <h3><i class="fas fa-list"></i> Daftar Kejadian Kebakaran</h3>
@@ -882,6 +609,8 @@ $conn->close();
                             <th>Kecamatan</th>
                             <th>Kelurahan</th>
                             <th>Koordinat</th>
+                            <th>Penyebab</th>
+                            <th>Skala</th>
                             <th>Korban</th>
                             <th>Aksi</th>
                         </tr>
@@ -889,6 +618,12 @@ $conn->close();
                     <tbody>
                         <?php foreach ($incidents as $index => $row): 
                             $hasCoord = !empty($row['latitude']) && !empty($row['longitude']);
+                            $penyebab = $row['penyebab'] ?? '-';
+                            if (!empty($row['penyebab_lainnya'])) {
+                                $penyebab = $row['penyebab_lainnya'];
+                            }
+                            $skala = $row['skala'] ?? '-';
+                            $skalaClass = $skala == 'Besar' ? 'badge-skala-besar' : ($skala == 'Kecil' ? 'badge-skala-kecil' : '');
                         ?>
                             <tr>
                                 <td><?= $index + 1 ?></td>
@@ -917,6 +652,16 @@ $conn->close();
                                         </a>
                                     <?php endif; ?>
                                 </td>
+                                <td><span style="font-size:12px;"><?= htmlspecialchars($penyebab) ?></span></td>
+                                <td>
+                                    <?php if ($skala == 'Besar'): ?>
+                                        <span class="badge-skala-besar"><i class="fas fa-fire"></i> Besar</span>
+                                    <?php elseif ($skala == 'Kecil'): ?>
+                                        <span class="badge-skala-kecil"><i class="fas fa-fire-extinguisher"></i> Kecil</span>
+                                    <?php else: ?>
+                                        <span style="color:#999;">-</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <span class="badge-status">Luka: <?= $row['korban_luka'] ?></span>
                                     <span class="badge-jiwa">Jiwa: <?= $row['korban_jiwa'] ?></span>
@@ -933,7 +678,7 @@ $conn->close();
         </div>
     </div>
 
-    <!-- Modal Floating (sama seperti sebelumnya) -->
+    <!-- MODAL FLOATING -->
     <div class="modal-floating" id="modalFloating">
         <div class="modal-floating-content">
             <div class="modal-floating-header">
@@ -947,6 +692,7 @@ $conn->close();
                 <form id="kejadianForm" enctype="multipart/form-data">
                     <input type="hidden" name="id" id="editId">
 
+                    <!-- Baris 1: Waktu & Kecamatan -->
                     <div class="row">
                         <div class="col-md-6">
                             <div class="form-group">
@@ -957,19 +703,41 @@ $conn->close();
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label class="form-label"><i class="fas fa-map-marker-alt me-1"></i> Kecamatan <span class="required">*</span></label>
-                                <select name="kecamatan" id="kecamatan" class="form-select" required>
+                                <select name="kecamatan" id="kecamatan" class="form-select" required onchange="updateKelurahan()">
                                     <option value="">Pilih Kecamatan</option>
-                                    <option value="Landasan Ulin">Landasan Ulin</option>
-                                    <option value="Cempaka">Cempaka</option>
-                                    <option value="Banjarbaru Utara">Banjarbaru Utara</option>
                                     <option value="Banjarbaru Selatan">Banjarbaru Selatan</option>
+                                    <option value="Banjarbaru Utara">Banjarbaru Utara</option>
+                                    <option value="Cempaka">Cempaka</option>
+                                    <option value="Landasan Ulin">Landasan Ulin</option>
                                     <option value="Liang Anggang">Liang Anggang</option>
                                 </select>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Map -->
+                    <!-- Baris 2: Kelurahan & Skala -->
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label"><i class="fas fa-building"></i> Kelurahan/Desa <span class="required">*</span></label>
+                                <select name="kelurahan" id="kelurahan" class="form-select" required>
+                                    <option value="">Pilih Kecamatan terlebih dahulu</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label"><i class="fas fa-fire"></i> Skala Kebakaran <span class="required">*</span></label>
+                                <select name="skala" id="skala" class="form-select" required>
+                                    <option value="">Pilih Skala</option>
+                                    <option value="Kecil">Kecil</option>
+                                    <option value="Besar">Besar</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MAP -->
                     <div class="form-group">
                         <label class="form-label"><i class="fas fa-map me-1"></i> Pilih Lokasi di Peta</label>
                         <div class="map-container">
@@ -1001,29 +769,24 @@ $conn->close();
                         </div>
                     </div>
 
-                    <!-- Form lainnya -->
+                    <!-- Baris 3: Jumlah Bangunan & KK -->
                     <div class="row">
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label class="form-label"><i class="fas fa-building"></i> Kelurahan/Desa <span class="required">*</span></label>
-                                <input type="text" name="kelurahan" id="kelurahan" class="form-control" placeholder="Kelurahan/Desa" required>
-                            </div>
-                        </div>
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label class="form-label"><i class="fas fa-home"></i> Jumlah Bangunan Terdampak</label>
                                 <input type="number" name="jumlah_bangunan" id="jumlah_bangunan" class="form-control" value="0">
                             </div>
                         </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="form-group">
                                 <label class="form-label"><i class="fas fa-users"></i> Jumlah KK</label>
                                 <input type="number" name="jumlah_KK" id="jumlah_KK" class="form-control" value="0">
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Baris 4: Individu, Luka, Jiwa -->
+                    <div class="row">
                         <div class="col-md-4">
                             <div class="form-group">
                                 <label class="form-label"><i class="fas fa-user"></i> Jumlah Individu</label>
@@ -1036,16 +799,55 @@ $conn->close();
                                 <input type="number" name="korban_luka" id="korban_luka" class="form-control" value="0">
                             </div>
                         </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <div class="form-group">
                                 <label class="form-label"><i class="fas fa-skull"></i> Korban Jiwa</label>
                                 <input type="number" name="korban_jiwa" id="korban_jiwa" class="form-control" value="0">
                             </div>
                         </div>
+                    </div>
+
+                    <!-- PENYEBAB & KETERANGAN -->
+                    <div class="row">
                         <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label"><i class="fas fa-exclamation-triangle"></i> Penyebab Kebakaran <span class="required">*</span></label>
+                                <select name="penyebab" id="penyebab" class="form-select" required onchange="togglePenyebabLainnya()">
+                                    <option value="">Pilih Penyebab</option>
+                                    <option value="Korsleting listrik">Korsleting listrik</option>
+                                    <option value="Kompor menyala">Kompor menyala</option>
+                                    <option value="Gas bocor">Gas bocor</option>
+                                    <option value="Rokok">Rokok</option>
+                                    <option value="Lilin">Lilin</option>
+                                    <option value="Bermain api">Bermain api</option>
+                                    <option value="Reaksi kimia">Reaksi kimia</option>
+                                    <option value="Pembakaran sampah">Pembakaran sampah</option>
+                                    <option value="Mesin bermasalah">Mesin bermasalah</option>
+                                    <option value="Petir">Petir</option>
+                                    <option value="Disengaja">Disengaja</option>
+                                    <option value="Dalam penyelidikan">Dalam penyelidikan</option>
+                                    <option value="Tidak diketahui">Tidak diketahui</option>
+                                    <option value="Lainnya">Lainnya...</option>
+                                </select>
+                            </div>
+                            <div id="penyebab_lainnya_container">
+                                <div class="form-group">
+                                    <label class="form-label">Sebutkan penyebab lainnya <span class="required">*</span></label>
+                                    <input type="text" name="penyebab_lainnya" id="penyebab_lainnya" class="form-control" placeholder="Tulis penyebab kebakaran...">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label"><i class="fas fa-sticky-note"></i> Keterangan</label>
+                                <textarea name="keterangan" id="keterangan" class="form-control" rows="4" placeholder="Keterangan tambahan tentang kejadian..."></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FOTO -->
+                    <div class="row">
+                        <div class="col-md-12">
                             <div class="form-group">
                                 <label class="form-label"><i class="fas fa-image"></i> Foto Kejadian</label>
                                 <input type="file" name="foto" id="foto" class="form-control" accept="image/*">
@@ -1054,6 +856,7 @@ $conn->close();
                         </div>
                     </div>
 
+                    <!-- ALAMAT -->
                     <div class="form-group">
                         <label class="form-label"><i class="fas fa-location-dot"></i> Alamat Lengkap <span class="required">*</span></label>
                         <textarea name="alamat" id="alamat" class="form-control" rows="3" placeholder="Alamat lengkap lokasi kejadian" required></textarea>
@@ -1068,7 +871,7 @@ $conn->close();
         </div>
     </div>
 
-    <!-- Modal Cari Alamat -->
+    <!-- MODAL CARI ALAMAT -->
     <div class="modal-floating" id="searchModal" style="z-index: 2100;">
         <div class="modal-floating-content" style="max-width: 500px;">
             <div class="modal-floating-header">
@@ -1097,43 +900,76 @@ $conn->close();
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
     <script>
-        // Data koordinat dari PHP
-        const coordinatesData = <?= json_encode($coordinates) ?>;
-        
-        // Initialize DataTable
-        $('#dataTable').DataTable({
-            language: {
-                url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json'
-            },
-            order: [
-                [2, 'desc']
-            ]
+        // ============================================================
+        // DATA KELURAHAN
+        // ============================================================
+        const kelurahanData = <?= json_encode($kelurahan_data) ?>;
+
+        function updateKelurahan() {
+            const kecamatan = document.getElementById('kecamatan').value;
+            const kelurahanSelect = document.getElementById('kelurahan');
+            
+            kelurahanSelect.innerHTML = '<option value="">Pilih Kelurahan</option>';
+            
+            if (kecamatan && kelurahanData[kecamatan]) {
+                kelurahanData[kecamatan].forEach(function(kel) {
+                    kelurahanSelect.innerHTML += '<option value="' + kel + '">' + kel + '</option>';
+                });
+            } else {
+                kelurahanSelect.innerHTML = '<option value="">Pilih Kecamatan terlebih dahulu</option>';
+            }
+        }
+
+        // ============================================================
+        // TOGGLE PENYEBAB LAINNYA
+        // ============================================================
+        function togglePenyebabLainnya() {
+            const penyebab = document.getElementById('penyebab').value;
+            const container = document.getElementById('penyebab_lainnya_container');
+            const input = document.getElementById('penyebab_lainnya');
+            
+            if (penyebab === 'Lainnya') {
+                container.style.display = 'block';
+                input.setAttribute('required', 'required');
+            } else {
+                container.style.display = 'none';
+                input.removeAttribute('required');
+                input.value = '';
+            }
+        }
+
+        // ============================================================
+        // DATA TABLES
+        // ============================================================
+        $(document).ready(function() {
+            $('#dataTable').DataTable({
+                language: {
+                    url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json'
+                },
+                order: [[2, 'desc']]
+            });
         });
 
-        // ============ PETA UTAMA ============
+        // ============================================================
+        // PETA UTAMA (DEFAULT OSM)
+        // ============================================================
+        const coordinatesData = <?= json_encode($coordinates) ?>;
         let mapPage;
 
         function initMapPage() {
-            if (mapPage) {
-                mapPage.remove();
-            }
-            
-            if (coordinatesData.length === 0) {
-                return;
-            }
+            if (mapPage) { mapPage.remove(); }
+            if (coordinatesData.length === 0) { return; }
             
             const centerLat = coordinatesData.reduce((sum, c) => sum + c.lat, 0) / coordinatesData.length;
             const centerLng = coordinatesData.reduce((sum, c) => sum + c.lng, 0) / coordinatesData.length;
             
             mapPage = L.map('mapPage').setView([centerLat, centerLng], 12);
             
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-                subdomains: 'abcd',
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
                 maxZoom: 19
             }).addTo(mapPage);
             
-            // Marker Cluster
             const markers = L.markerClusterGroup();
             
             coordinatesData.forEach(data => {
@@ -1153,74 +989,32 @@ $conn->close();
             
             mapPage.addLayer(markers);
             
-            // Fit bounds
             const bounds = coordinatesData.map(c => [c.lat, c.lng]);
             mapPage.fitBounds(bounds, { padding: [30, 30] });
         }
 
-        function refreshMap() {
-            location.reload();
-        }
-
         function editKejadian(id) {
-            // Trigger edit button
             document.querySelector(`.btn-edit[data-id="${id}"]`)?.click();
         }
 
-        // ============ MAP DI MODAL ============
+        // ============================================================
+        // MAP DI MODAL (DEFAULT OSM)
+        // ============================================================
         let map, marker;
         const defaultLat = -3.4422;
         const defaultLng = 114.8325;
 
-        const validKelurahan = [
-            'Landasan Ulin Timur', 'Landasan Ulin Barat', 'Landasan Ulin Utara',
-            'Syamsudin Noor', 'Guntung Payong', 'Guntung Manggis',
-            'Cempaka', 'Bangkal', 'Palam', 'Sungai Tiung', 'Cempaka Baru',
-            'Loktabat Utara', 'Loktabat Selatan', 'Mentaos', 'Sungai Ulin', 'Komet',
-            'Guntung Paikat', 'Kemuning', 'Sungai Besar', 'Sungai Lulut',
-            'Landasan Ulin Tengah', 'Pangeran', 'Basirih', 'Liang Anggang Baru'
-        ];
-
-        const kelurahanToKecamatan = {
-            'Landasan Ulin Timur': 'Landasan Ulin',
-            'Landasan Ulin Barat': 'Landasan Ulin',
-            'Landasan Ulin Utara': 'Landasan Ulin',
-            'Syamsudin Noor': 'Landasan Ulin',
-            'Guntung Payong': 'Landasan Ulin',
-            'Guntung Manggis': 'Landasan Ulin',
-            'Cempaka': 'Cempaka',
-            'Bangkal': 'Cempaka',
-            'Palam': 'Cempaka',
-            'Sungai Tiung': 'Cempaka',
-            'Cempaka Baru': 'Cempaka',
-            'Loktabat Utara': 'Banjarbaru Utara',
-            'Loktabat Selatan': 'Banjarbaru Utara',
-            'Mentaos': 'Banjarbaru Utara',
-            'Sungai Ulin': 'Banjarbaru Utara',
-            'Komet': 'Banjarbaru Utara',
-            'Guntung Paikat': 'Banjarbaru Selatan',
-            'Kemuning': 'Banjarbaru Selatan',
-            'Sungai Besar': 'Banjarbaru Selatan',
-            'Sungai Lulut': 'Banjarbaru Selatan',
-            'Landasan Ulin Tengah': 'Liang Anggang',
-            'Pangeran': 'Liang Anggang',
-            'Basirih': 'Liang Anggang',
-            'Liang Anggang Baru': 'Liang Anggang'
-        };
-
         function initMap(lat = defaultLat, lng = defaultLng) {
             if (map) map.remove();
-            const tileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+            
             map = L.map('map').setView([lat, lng], 14);
-            L.tileLayer(tileUrl, {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-                subdomains: 'abcd',
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
                 maxZoom: 19
             }).addTo(map);
 
-            marker = L.marker([lat, lng], {
-                draggable: true
-            }).addTo(map);
+            marker = L.marker([lat, lng], { draggable: true }).addTo(map);
             document.getElementById('latitude').value = lat;
             document.getElementById('longitude').value = lng;
 
@@ -1242,7 +1036,9 @@ $conn->close();
             document.getElementById('longitude').value = lng.toFixed(8);
         }
 
-        // Geocoding dari alamat di modal
+        // ============================================================
+        // GEOCODING FUNCTIONS
+        // ============================================================
         document.getElementById('geocodeFromAddress')?.addEventListener('click', async function() {
             const address = document.getElementById('alamat').value;
             if (!address) {
@@ -1265,20 +1061,18 @@ $conn->close();
                     marker.setLatLng([lat, lng]);
                     updateCoordinatesFromLatLng(lat, lng);
                     
-                    // Isi kecamatan dan kelurahan jika ada
                     if (data[0].display_name) {
-                        // Parse kecamatan dan kelurahan dari display_name
                         const parts = data[0].display_name.split(',');
-                        // Coba cari kecamatan dan kelurahan
                         for (let part of parts) {
                             part = part.trim();
                             for (let kec of ['Landasan Ulin', 'Cempaka', 'Banjarbaru Utara', 'Banjarbaru Selatan', 'Liang Anggang']) {
                                 if (part.toLowerCase().includes(kec.toLowerCase())) {
                                     document.getElementById('kecamatan').value = kec;
+                                    updateKelurahan();
                                     break;
                                 }
                             }
-                            for (let kel of validKelurahan) {
+                            for (let kel of ['Guntung Paikat', 'Kemuning', 'Loktabat Selatan', 'Sungai Besar', 'Komet', 'Loktabat Utara', 'Mentaos', 'Sungai Ulin', 'Bangkal', 'Cempaka', 'Palam', 'Sungai Tiung', 'Guntung Manggis', 'Guntung Payung', 'Landasan Ulin Timur', 'Syamsudin Noor', 'Landasan Ulin Barat', 'Landasan Ulin Selatan', 'Landasan Ulin Tengah', 'Landasan Ulin Utara']) {
                                 if (part.toLowerCase().includes(kel.toLowerCase())) {
                                     document.getElementById('kelurahan').value = kel;
                                     break;
@@ -1308,35 +1102,6 @@ $conn->close();
                 const data = await response.json();
                 if (data.display_name) {
                     document.getElementById('alamat').value = data.display_name;
-                    if (data.address) {
-                        let kelurahan = data.address.village || data.address.suburb || data.address.neighbourhood || '';
-                        let kecamatan = data.address.city_district || data.address.county || '';
-                        kelurahan = kelurahan.replace(/^(Kelurahan|Desa)\s+/i, '');
-                        kecamatan = kecamatan.replace(/^Kecamatan\s+/i, '');
-                        let foundKelurahan = '';
-                        for (let k of validKelurahan) {
-                            if (kelurahan.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(kelurahan.toLowerCase())) {
-                                foundKelurahan = k;
-                                break;
-                            }
-                        }
-                        if (foundKelurahan) {
-                            document.getElementById('kelurahan').value = foundKelurahan;
-                            const matchedKec = kelurahanToKecamatan[foundKelurahan];
-                            if (matchedKec) document.getElementById('kecamatan').value = matchedKec;
-                        } else if (kelurahan) {
-                            document.getElementById('kelurahan').value = kelurahan;
-                        }
-                        if (kecamatan && !document.getElementById('kecamatan').value) {
-                            const kecOptions = ['Landasan Ulin', 'Cempaka', 'Banjarbaru Utara', 'Banjarbaru Selatan', 'Liang Anggang'];
-                            for (let k of kecOptions) {
-                                if (kecamatan.toLowerCase().includes(k.toLowerCase())) {
-                                    document.getElementById('kecamatan').value = k;
-                                    break;
-                                }
-                            }
-                        }
-                    }
                 }
             } catch (err) {
                 console.log('Geocoding error:', err);
@@ -1383,16 +1148,16 @@ $conn->close();
             }
         }
 
-        // Modal handlers
+        // ============================================================
+        // MODAL HANDLERS
+        // ============================================================
         const modal = document.getElementById('modalFloating');
         const searchModal = document.getElementById('searchModal');
         const btnTambah = document.getElementById('btnTambah');
 
         function openModal() {
             modal.classList.add('show');
-            setTimeout(() => {
-                map?.invalidateSize();
-            }, 200);
+            setTimeout(() => { map?.invalidateSize(); }, 200);
         }
 
         function closeModalFunc() {
@@ -1414,6 +1179,9 @@ $conn->close();
             document.getElementById('editId').value = '';
             document.getElementById('modalTitle').innerHTML = 'Tambah Data Kejadian';
             document.getElementById('fotoPreview').innerHTML = '';
+            document.getElementById('penyebab_lainnya_container').style.display = 'none';
+            document.getElementById('kelurahan').innerHTML = '<option value="">Pilih Kecamatan terlebih dahulu</option>';
+            
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
             document.getElementById('waktu').value = now.toISOString().slice(0, 16);
@@ -1468,37 +1236,65 @@ $conn->close();
             closeSearchModal();
         };
 
+        // ============================================================
+        // EDIT DATA
+        // ============================================================
         document.querySelectorAll('.btn-edit').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
                 $.ajax({
                     url: 'get_data.php',
                     type: 'GET',
-                    data: {
-                        id: id
-                    },
+                    data: { id: id },
                     dataType: 'json',
                     success: function(data) {
                         if (data.success) {
-                            document.getElementById('editId').value = data.data.id;
-                            document.getElementById('waktu').value = data.data.waktu.replace(' ', 'T').slice(0, 16);
-                            document.getElementById('alamat').value = data.data.alamat;
-                            document.getElementById('kecamatan').value = data.data.kecamatan;
-                            document.getElementById('kelurahan').value = data.data.kelurahan;
-                            document.getElementById('jumlah_bangunan').value = data.data.jumlah_bangunan;
-                            document.getElementById('jumlah_KK').value = data.data.jumlah_KK;
-                            document.getElementById('jumlah_individu').value = data.data.jumlah_individu;
-                            document.getElementById('korban_luka').value = data.data.korban_luka;
-                            document.getElementById('korban_jiwa').value = data.data.korban_jiwa;
-                            const lat = parseFloat(data.data.latitude) || defaultLat;
-                            const lng = parseFloat(data.data.longitude) || defaultLng;
+                            const d = data.data;
+                            document.getElementById('editId').value = d.id;
+                            document.getElementById('waktu').value = d.waktu.replace(' ', 'T').slice(0, 16);
+                            document.getElementById('alamat').value = d.alamat;
+                            document.getElementById('kecamatan').value = d.kecamatan || '';
+                            updateKelurahan();
+                            document.getElementById('kelurahan').value = d.kelurahan || '';
+                            document.getElementById('jumlah_bangunan').value = d.jumlah_bangunan || 0;
+                            document.getElementById('jumlah_KK').value = d.jumlah_KK || 0;
+                            document.getElementById('jumlah_individu').value = d.jumlah_individu || 0;
+                            document.getElementById('korban_luka').value = d.korban_luka || 0;
+                            document.getElementById('korban_jiwa').value = d.korban_jiwa || 0;
+                            document.getElementById('skala').value = d.skala || '';
+                            document.getElementById('keterangan').value = d.keterangan || '';
+                            
+                            // Penyebab
+                            const penyebabSelect = document.getElementById('penyebab');
+                            const penyebabLainnya = document.getElementById('penyebab_lainnya');
+                            const container = document.getElementById('penyebab_lainnya_container');
+                            
+                            const options = Array.from(penyebabSelect.options).map(o => o.value);
+                            if (d.penyebab && options.includes(d.penyebab)) {
+                                penyebabSelect.value = d.penyebab;
+                                container.style.display = 'none';
+                                penyebabLainnya.value = '';
+                            } else if (d.penyebab) {
+                                penyebabSelect.value = 'Lainnya';
+                                container.style.display = 'block';
+                                penyebabLainnya.value = d.penyebab;
+                            } else {
+                                penyebabSelect.value = '';
+                                container.style.display = 'none';
+                                penyebabLainnya.value = '';
+                            }
+                            
+                            const lat = parseFloat(d.latitude) || defaultLat;
+                            const lng = parseFloat(d.longitude) || defaultLng;
                             initMap(lat, lng);
                             updateCoordinatesFromLatLng(lat, lng);
-                            if (data.data.foto) {
-                                document.getElementById('fotoPreview').innerHTML = '<img src="../../uploads/' + data.data.foto + '" class="image-preview"><p class="text-muted small mt-1">Foto saat ini</p>';
+                            
+                            if (d.foto) {
+                                document.getElementById('fotoPreview').innerHTML = '<img src="../../uploads/' + d.foto + '" class="image-preview"><p class="text-muted small mt-1">Foto saat ini</p>';
                             } else {
                                 document.getElementById('fotoPreview').innerHTML = '';
                             }
+                            
                             document.getElementById('modalTitle').innerHTML = 'Edit Data Kejadian';
                             document.getElementById('submitBtn').innerHTML = '<i class="fas fa-save"></i> Update Data';
                             openModal();
@@ -1508,8 +1304,21 @@ $conn->close();
             });
         });
 
+        // ============================================================
+        // SUBMIT FORM
+        // ============================================================
         $('#kejadianForm').on('submit', function(e) {
             e.preventDefault();
+            
+            // Validasi jika penyebab "Lainnya" tapi tidak diisi
+            const penyebab = document.getElementById('penyebab').value;
+            const penyebabLainnya = document.getElementById('penyebab_lainnya').value;
+            if (penyebab === 'Lainnya' && !penyebabLainnya.trim()) {
+                alert('Silakan tulis penyebab kebakaran pada kolom yang tersedia!');
+                document.getElementById('penyebab_lainnya').focus();
+                return;
+            }
+            
             document.getElementById('loadingOverlay').classList.add('show');
             const formData = new FormData(this);
             $.ajax({
@@ -1534,6 +1343,9 @@ $conn->close();
             });
         });
 
+        // ============================================================
+        // PREVIEW FOTO
+        // ============================================================
         document.getElementById('foto').addEventListener('change', function(e) {
             const preview = document.getElementById('fotoPreview');
             preview.innerHTML = '';
@@ -1546,7 +1358,9 @@ $conn->close();
             }
         });
 
-        // Dropdown
+        // ============================================================
+        // DROPDOWN USER
+        // ============================================================
         document.getElementById('userAvatar').addEventListener('click', function(e) {
             e.stopPropagation();
             document.getElementById('dropdownMenu').classList.toggle('show');
@@ -1555,10 +1369,13 @@ $conn->close();
             document.getElementById('dropdownMenu').classList.remove('show');
         });
 
-        // Initialize maps
+        // ============================================================
+        // INITIALIZE
+        // ============================================================
         document.addEventListener('DOMContentLoaded', function() {
             initMapPage();
             initMap(defaultLat, defaultLng);
+            updateKelurahan();
         });
     </script>
 </body>
