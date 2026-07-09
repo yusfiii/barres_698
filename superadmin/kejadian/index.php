@@ -23,16 +23,20 @@ $conn->close();
 // Include sidebar
 include __DIR__ . '/../../includes/sidebar.php';
 
-// Handle delete
+// ============================================================
+// HANDLE DELETE
+// ============================================================
 if (isset($_GET['delete'])) {
     $id = intval($_GET['delete']);
     $conn = getConnection();
 
+    // Ambil foto untuk dihapus
     $stmt = $conn->prepare("SELECT foto FROM kejadian_kebakaran WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
     $kejadian = $result->fetch_assoc();
+    $stmt->close();
 
     if ($kejadian && $kejadian['foto']) {
         $fotoPath = '../../uploads/' . $kejadian['foto'];
@@ -41,9 +45,13 @@ if (isset($_GET['delete'])) {
         }
     }
 
+    // Hapus data
     $stmt = $conn->prepare("DELETE FROM kejadian_kebakaran WHERE id = ?");
     $stmt->bind_param("i", $id);
+    
     if ($stmt->execute()) {
+        // LOG AKTIVITAS
+        logAktivitas('Menghapus data kejadian kebakaran ID: ' . $id, $_SESSION['user_id']);
         $message = "Data berhasil dihapus!";
         $messageType = "success";
     } else {
@@ -54,7 +62,9 @@ if (isset($_GET['delete'])) {
     $conn->close();
 }
 
-// Handle Geocoding
+// ============================================================
+// HANDLE GEOCODING (Per Data)
+// ============================================================
 if (isset($_GET['geocode']) && isset($_GET['id'])) {
     $id = intval($_GET['id']);
     $conn = getConnection();
@@ -74,6 +84,7 @@ if (isset($_GET['geocode']) && isset($_GET['id'])) {
             if ($stmt->execute()) {
                 $message = "Koordinat berhasil diperbarui! Lat: " . $coords['lat'] . ", Lng: " . $coords['lng'];
                 $messageType = "success";
+                logAktivitas('Mengupdate koordinat kejadian ID: ' . $id, $_SESSION['user_id']);
             } else {
                 $message = "Gagal memperbarui koordinat!";
                 $messageType = "danger";
@@ -87,7 +98,9 @@ if (isset($_GET['geocode']) && isset($_GET['id'])) {
     $conn->close();
 }
 
-// Handle Bulk Geocoding
+// ============================================================
+// HANDLE BULK GEOCODING
+// ============================================================
 if (isset($_GET['bulk_geocode'])) {
     $conn = getConnection();
     $query = "SELECT id, alamat FROM kejadian_kebakaran WHERE latitude IS NULL OR latitude = 0 OR longitude IS NULL OR longitude = 0";
@@ -116,14 +129,22 @@ if (isset($_GET['bulk_geocode'])) {
     $messageType = $updated > 0 ? "success" : "danger";
 }
 
-// Get incidents dengan filter
+// ============================================================
+// GET INCIDENTS DENGAN FILTER
+// ============================================================
 $conn = getConnection();
-$query = "SELECT * FROM kejadian_kebakaran WHERE 1=1";
+$query = "SELECT k.*, 
+                 u1.username AS nama_penambah, 
+                 u2.username AS nama_pengedit
+          FROM kejadian_kebakaran k
+          LEFT JOIN users u1 ON k.dibuat_oleh = u1.id
+          LEFT JOIN users u2 ON k.diupdate_oleh = u2.id
+          WHERE 1=1";
 $params = [];
 $types = "";
 
 if (!empty($search)) {
-    $query .= " AND (alamat LIKE ? OR kecamatan LIKE ? OR kelurahan LIKE ?)";
+    $query .= " AND (k.alamat LIKE ? OR k.kecamatan LIKE ? OR k.kelurahan LIKE ?)";
     $searchParam = "%$search%";
     $params[] = $searchParam;
     $params[] = $searchParam;
@@ -131,17 +152,17 @@ if (!empty($search)) {
     $types .= "sss";
 }
 if (!empty($filter_kecamatan)) {
-    $query .= " AND kecamatan = ?";
+    $query .= " AND k.kecamatan = ?";
     $params[] = $filter_kecamatan;
     $types .= "s";
 }
 if (!empty($filter_bulan)) {
-    $query .= " AND DATE_FORMAT(waktu, '%Y-%m') = ?";
+    $query .= " AND DATE_FORMAT(k.waktu, '%Y-%m') = ?";
     $params[] = $filter_bulan;
     $types .= "s";
 }
 
-$query .= " ORDER BY waktu DESC";
+$query .= " ORDER BY k.waktu DESC";
 
 $stmt = $conn->prepare($query);
 if (!empty($params)) {
@@ -612,6 +633,7 @@ $conn->close();
                             <th>Penyebab</th>
                             <th>Skala</th>
                             <th>Korban</th>
+                            <th>Ditambahkan Oleh</th>
                             <th>Aksi</th>
                         </tr>
                     </thead>
@@ -665,6 +687,17 @@ $conn->close();
                                 <td>
                                     <span class="badge-status">Luka: <?= $row['korban_luka'] ?></span>
                                     <span class="badge-jiwa">Jiwa: <?= $row['korban_jiwa'] ?></span>
+                                </td>
+                                <td>
+                                    <span style="font-size:12px; font-weight:600;">
+                                        <i class="fas fa-user-circle" style="color:#F7B801;"></i>
+                                        <?= htmlspecialchars($row['nama_penambah'] ?? '-') ?>
+                                    </span>
+                                    <?php if (!empty($row['nama_pengedit'])): ?>
+                                        <br><span style="font-size:10px; color:#999;">
+                                            <i class="fas fa-pen"></i> diedit oleh <?= htmlspecialchars($row['nama_pengedit']) ?>
+                                        </span>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <button class="btn-action btn-edit" data-id="<?= $row['id'] ?>"><i class="fas fa-edit"></i></button>

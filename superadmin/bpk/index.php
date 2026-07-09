@@ -33,112 +33,25 @@ $bpk_list = $conn->query($query);
 $total_bpk = $bpk_list->num_rows;
 $total_anggota_all = $conn->query("SELECT COUNT(*) as t FROM anggota")->fetch_assoc()['t'];
 
+// DATA KECAMATAN DAN KELURAHAN
 $kecamatan_list = [
-    'Banjarbaru Utara',
     'Banjarbaru Selatan',
+    'Banjarbaru Utara',
     'Cempaka',
     'Landasan Ulin',
     'Liang Anggang'
 ];
 
 $kelurahan_list = [
-    'Banjarbaru Utara' => ['Loktabat Utara', 'Mentaos', 'Sungai Ulin', 'Guntung Manggis', 'Guntung Payung'],
-    'Banjarbaru Selatan' => ['Sungai Besar', 'Loktabat Selatan', 'Guntung Damar', 'Kemuning'],
-    'Cempaka' => ['Cempaka', 'Palam', 'Bangkal', 'Sungai Tiung'],
-    'Landasan Ulin' => ['Landasan Ulin Timur', 'Landasan Ulin Barat', 'Syamsudin Noor', 'Guntung Manggis'],
-    'Liang Anggang' => ['Liang Anggang', 'Landasan Ulin Utara', 'Landasan Ulin Selatan']
+    'Banjarbaru Selatan' => ['Guntung Paikat', 'Kemuning', 'Loktabat Selatan', 'Sungai Besar'],
+    'Banjarbaru Utara' => ['Komet', 'Loktabat Utara', 'Mentaos', 'Sungai Ulin'],
+    'Cempaka' => ['Bangkal', 'Cempaka', 'Palam', 'Sungai Tiung'],
+    'Landasan Ulin' => ['Guntung Manggis', 'Guntung Payung', 'Landasan Ulin Timur', 'Syamsudin Noor'],
+    'Liang Anggang' => ['Landasan Ulin Barat', 'Landasan Ulin Selatan', 'Landasan Ulin Tengah', 'Landasan Ulin Utara']
 ];
 
-// Include sidebar dari folder includes
+// Include sidebar
 include __DIR__ . '/../../includes/sidebar.php';
-
-// Proses Tambah/Edit/Hapus via AJAX
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
-    header('Content-Type: application/json');
-
-    if ($_POST['action'] == 'tambah' || $_POST['action'] == 'edit') {
-        $nomor_registrasi = trim($_POST['nomor_registrasi']);
-        $nama_bpk = trim($_POST['nama_bpk']);
-        $alamat = trim($_POST['alamat']);
-        $kecamatan = $_POST['kecamatan'];
-        $kelurahan = $_POST['kelurahan'];
-        $latitude = trim($_POST['latitude']);
-        $longitude = trim($_POST['longitude']);
-        $tahun_berdiri = $_POST['tahun_berdiri'];
-
-        if (empty($nomor_registrasi) || empty($nama_bpk)) {
-            echo json_encode(['success' => false, 'message' => 'Nomor registrasi dan nama BPK wajib diisi!']);
-            exit();
-        }
-
-        $cek_query = "SELECT id FROM bpk WHERE nomor_registrasi = '$nomor_registrasi'";
-        if ($_POST['action'] == 'edit') {
-            $edit_id = (int)$_POST['id'];
-            $cek_query .= " AND id != $edit_id";
-        }
-        $cek = $conn->query($cek_query);
-        if ($cek && $cek->num_rows > 0) {
-            echo json_encode(['success' => false, 'message' => 'Nomor registrasi sudah digunakan!']);
-            exit();
-        }
-
-        $logo_name = $_POST['logo_lama'] ?? null;
-        if (isset($_FILES['logo']) && $_FILES['logo']['error'] == 0) {
-            $uploadDir = '../../assets/img/uploads/logo/';
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-            $ext = pathinfo($_FILES['logo']['name'], PATHINFO_EXTENSION);
-            $logo_name = time() . '_' . uniqid() . '.' . $ext;
-            if (move_uploaded_file($_FILES['logo']['tmp_name'], $uploadDir . $logo_name)) {
-                if ($_POST['logo_lama'] && file_exists($uploadDir . $_POST['logo_lama'])) {
-                    unlink($uploadDir . $_POST['logo_lama']);
-                }
-            }
-        }
-
-        if ($_POST['action'] == 'tambah') {
-            $stmt = $conn->prepare("INSERT INTO bpk (nomor_registrasi, nama_bpk, alamat, kecamatan, kelurahan, logo, latitude, longitude, tahun_berdiri) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssssssddi", $nomor_registrasi, $nama_bpk, $alamat, $kecamatan, $kelurahan, $logo_name, $latitude, $longitude, $tahun_berdiri);
-        } else {
-            $edit_id = (int)$_POST['id'];
-            $stmt = $conn->prepare("UPDATE bpk SET nomor_registrasi=?, nama_bpk=?, alamat=?, kecamatan=?, kelurahan=?, logo=?, latitude=?, longitude=?, tahun_berdiri=? WHERE id=?");
-            $stmt->bind_param("ssssssddii", $nomor_registrasi, $nama_bpk, $alamat, $kecamatan, $kelurahan, $logo_name, $latitude, $longitude, $tahun_berdiri, $edit_id);
-        }
-
-        if ($stmt->execute()) {
-            echo json_encode(['success' => true, 'message' => $_POST['action'] == 'tambah' ? 'BPK berhasil ditambahkan!' : 'Data BPK berhasil diupdate!']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Gagal menyimpan data!']);
-        }
-        $stmt->close();
-        exit();
-    }
-
-    if ($_POST['action'] == 'hapus') {
-        $hapus_id = (int)$_POST['id'];
-        $cek = $conn->query("SELECT COUNT(*) as t FROM anggota WHERE bpk_id = $hapus_id")->fetch_assoc();
-        if ($cek['t'] > 0) {
-            echo json_encode(['success' => false, 'message' => 'BPK memiliki ' . $cek['t'] . ' anggota. Hapus anggota terlebih dahulu!']);
-            exit();
-        }
-
-        $logo = $conn->query("SELECT logo FROM bpk WHERE id = $hapus_id")->fetch_assoc();
-        if ($logo['logo'] && file_exists('../../assets/img/uploads/logo/' . $logo['logo'])) {
-            unlink('../../assets/img/uploads/logo/' . $logo['logo']);
-        }
-
-        $stmt = $conn->prepare("DELETE FROM bpk WHERE id = ?");
-        $stmt->bind_param("i", $hapus_id);
-        if ($stmt->execute()) {
-            echo json_encode(['success' => true, 'message' => 'BPK berhasil dihapus!']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Gagal menghapus!']);
-        }
-        $stmt->close();
-        exit();
-    }
-}
 
 $all_bpk_data = [];
 if ($bpk_list->num_rows > 0) {
@@ -170,29 +83,18 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Poppins', sans-serif;
             background: #D1D5DB;
             background: linear-gradient(135deg, #E5E7EB 0%, #D1D5DB 100%);
             min-height: 100vh;
         }
-
-        .main-content {
-            margin-left: 280px;
-            padding: 24px 32px;
-            min-height: 100vh;
-        }
-
-        /* Top Navbar */
+        .main-content { margin-left: 280px; padding: 24px 32px; min-height: 100vh; }
+        
         .top-navbar {
             background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0,0,0,0.08);
             border-radius: 20px;
             padding: 12px 24px;
             margin-bottom: 28px;
@@ -200,322 +102,154 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
             justify-content: space-between;
             align-items: center;
         }
-
-        .page-title h2 {
-            font-size: 20px;
-            font-weight: 600;
-            margin: 0;
-            color: #1A1A1A;
-        }
-
-        .page-title p {
-            font-size: 13px;
-            margin: 4px 0 0 0;
-            color: #666;
-        }
-
-        .user-info {
-            text-align: right;
-        }
-
-        .user-info .username {
-            font-size: 14px;
-            font-weight: 600;
-            color: #1A1A1A;
-        }
-
-        .user-info .role {
-            font-size: 11px;
-            color: #F7B801;
-        }
-
+        .page-title h2 { font-size: 20px; font-weight: 600; margin: 0; color: #1A1A1A; }
+        .page-title p { font-size: 13px; margin: 4px 0 0 0; color: #666; }
+        .user-info { text-align: right; }
+        .user-info .username { font-size: 14px; font-weight: 600; color: #1A1A1A; }
+        .user-info .role { font-size: 11px; color: #F7B801; }
         .user-avatar {
-            width: 44px;
-            height: 44px;
+            width: 44px; height: 44px;
             background: linear-gradient(135deg, #F7B801, #E5A800);
             border-radius: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: transform 0.2s;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: transform 0.2s;
         }
-
-        .user-avatar:hover {
-            transform: scale(1.05);
-        }
-
-        .user-avatar i {
-            font-size: 22px;
-            color: #1A1A1A;
-        }
-
+        .user-avatar:hover { transform: scale(1.05); }
+        .user-avatar i { font-size: 22px; color: #1A1A1A; }
+        
         .dropdown-menu-custom {
-            position: absolute;
-            top: 80px;
-            right: 32px;
-            background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            border-radius: 16px;
-            padding: 12px 0;
-            min-width: 180px;
-            display: none;
-            z-index: 1000;
+            position: absolute; top: 80px; right: 32px;
+            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            border-radius: 16px; padding: 12px 0; min-width: 180px;
+            display: none; z-index: 1000;
         }
-
-        .dropdown-menu-custom.show {
-            display: block;
-            animation: fadeIn 0.2s ease;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
+        .dropdown-menu-custom.show { display: block; animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .dropdown-menu-custom a {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 20px;
-            text-decoration: none;
-            transition: all 0.2s;
-            font-size: 13px;
-            color: #333;
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 20px; text-decoration: none;
+            transition: all 0.2s; font-size: 13px; color: #333;
         }
+        .dropdown-menu-custom a:hover { background: rgba(247,184,1,0.1); color: #F7B801; }
+        .dropdown-divider { margin: 8px 0; border-color: #E0E0E0; }
 
-        .dropdown-menu-custom a:hover {
-            background: rgba(247, 184, 1, 0.1);
-            color: #F7B801;
-        }
-
-        .dropdown-divider {
-            margin: 8px 0;
-            border-color: #E0E0E0;
-        }
-
-        /* Stats Cards */
         .stat-card {
             background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0,0,0,0.08);
             border-radius: 20px;
             padding: 20px;
             transition: all 0.3s ease;
             text-align: center;
         }
-
-        .stat-card:hover {
-            transform: translateY(-4px);
-            border-color: #F7B801;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
-        }
-
+        .stat-card:hover { transform: translateY(-4px); border-color: #F7B801; box-shadow: 0 8px 20px rgba(0,0,0,0.06); }
         .stat-icon {
-            width: 55px;
-            height: 55px;
-            background: rgba(247, 184, 1, 0.1);
+            width: 55px; height: 55px;
+            background: rgba(247,184,1,0.1);
             border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: flex; align-items: center; justify-content: center;
             margin: 0 auto 12px;
         }
+        .stat-icon i { font-size: 28px; color: #F7B801; }
+        .stat-number { font-size: 32px; font-weight: 700; margin-bottom: 5px; color: #1A1A1A; }
+        .stat-label { font-size: 13px; font-weight: 500; color: #666; }
 
-        .stat-icon i {
-            font-size: 28px;
-            color: #F7B801;
-        }
-
-        .stat-number {
-            font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 5px;
-            color: #1A1A1A;
-        }
-
-        .stat-label {
-            font-size: 13px;
-            font-weight: 500;
-            color: #666;
-        }
-
-        /* Filter Section */
         .filter-section {
             background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0,0,0,0.08);
             border-radius: 20px;
             padding: 20px 24px;
             margin-bottom: 28px;
         }
-
-        .form-label {
-            color: #1A1A1A;
-            font-weight: 500;
-            font-size: 13px;
-            margin-bottom: 8px;
+        .form-label { color: #1A1A1A; font-weight: 500; font-size: 13px; margin-bottom: 8px; }
+        .form-control, .form-select {
+            background: #F8F8F8; border: 1px solid #E0E0E0; color: #1A1A1A;
+            border-radius: 12px; padding: 10px 14px; font-size: 13px; font-family: 'Poppins', sans-serif;
         }
+        .form-control:focus, .form-select:focus { border-color: #F7B801; box-shadow: 0 0 0 3px rgba(247,184,1,0.1); outline: none; }
 
-        .form-control,
-        .form-select {
-            background: #F8F8F8;
-            border: 1px solid #E0E0E0;
-            color: #1A1A1A;
-            border-radius: 12px;
-            padding: 10px 14px;
-            font-size: 13px;
-            font-family: 'Poppins', sans-serif;
-        }
-
-        .form-control:focus,
-        .form-select:focus {
-            border-color: #F7B801;
-            box-shadow: 0 0 0 3px rgba(247, 184, 1, 0.1);
-            outline: none;
-        }
-
-        /* Buttons */
         .btn-gold {
             background: linear-gradient(135deg, #F7B801, #E5A800);
-            border: none;
-            padding: 10px 20px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 13px;
-            color: #1A1A1A;
+            border: none; padding: 10px 20px; border-radius: 12px;
+            font-weight: 600; font-size: 13px; color: #1A1A1A;
             transition: all 0.3s ease;
         }
-
-        .btn-gold:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(247, 184, 1, 0.3);
-        }
-
+        .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(247,184,1,0.3); }
         .btn-outline-gold {
-            background: transparent;
-            border: 1px solid rgba(247, 184, 1, 0.4);
-            padding: 10px 20px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 13px;
-            color: #F7B801;
+            background: transparent; border: 1px solid rgba(247,184,1,0.4);
+            padding: 10px 20px; border-radius: 12px;
+            font-weight: 600; font-size: 13px; color: #F7B801;
             transition: all 0.2s;
         }
+        .btn-outline-gold:hover { background: rgba(247,184,1,0.1); }
 
-        .btn-outline-gold:hover {
-            background: rgba(247, 184, 1, 0.1);
-        }
-
-        /* Card */
         .card-custom {
-            background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            border-radius: 20px;
-            overflow: hidden;
-            margin-bottom: 28px;
+            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.08);
+            border-radius: 20px; overflow: hidden; margin-bottom: 28px;
         }
-
         .card-header-custom {
-            padding: 18px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #FFFFFF;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+            padding: 18px 24px; display: flex; justify-content: space-between;
+            align-items: center; background: #FFFFFF;
+            border-bottom: 1px solid rgba(0,0,0,0.08);
         }
-
         .card-header-custom h3 {
-            font-size: 16px;
-            font-weight: 600;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: #F7B801;
+            font-size: 16px; font-weight: 600; margin: 0;
+            display: flex; align-items: center; gap: 10px; color: #F7B801;
         }
+        .badge-stats { background: rgba(247,184,1,0.1); padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; color: #F7B801; }
 
-        .badge-stats {
-            background: rgba(247, 184, 1, 0.1);
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            color: #F7B801;
+        /* ===== PETA OSM DI ATAS DAFTAR BPK ===== */
+        .map-osm-container {
+            height: 400px;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid rgba(0,0,0,0.1);
         }
-
-        /* Table */
-        .table-custom {
+        #mapOSM {
+            height: 100%;
             width: 100%;
-            margin-bottom: 0;
-            color: #1A1A1A;
         }
 
+        .table-custom { width: 100%; margin-bottom: 0; color: #1A1A1A; }
         .table-custom thead th {
-            padding: 14px 16px;
-            font-size: 13px;
-            font-weight: 600;
-            background: #F8F8F8;
-            color: #1A1A1A;
-            border-bottom: 1px solid #E0E0E0;
+            padding: 14px 16px; font-size: 13px; font-weight: 600;
+            background: #F8F8F8; color: #1A1A1A; border-bottom: 1px solid #E0E0E0;
         }
-
         .table-custom tbody td {
-            padding: 12px 16px;
-            font-size: 13px;
-            vertical-align: middle;
+            padding: 12px 16px; font-size: 13px; vertical-align: middle;
             border-bottom: 1px solid #E0E0E0;
         }
-
-        .table-custom tbody tr:hover {
-            background: rgba(247, 184, 1, 0.03);
-        }
+        .table-custom tbody tr:hover { background: rgba(247,184,1,0.03); }
 
         .reg-badge {
             display: inline-block;
-            background: rgba(247, 184, 1, 0.15);
+            background: rgba(247,184,1,0.15);
             color: #B8860B;
             padding: 4px 10px;
             border-radius: 20px;
             font-weight: 700;
             font-size: 12px;
         }
-
         .logo-thumb {
-            width: 45px;
-            height: 45px;
+            width: 45px; height: 45px;
             border-radius: 12px;
             object-fit: cover;
-            border: 2px solid rgba(247, 184, 1, 0.3);
+            border: 2px solid rgba(247,184,1,0.3);
         }
-
         .logo-placeholder {
-            width: 45px;
-            height: 45px;
+            width: 45px; height: 45px;
             border-radius: 12px;
-            background: rgba(247, 184, 1, 0.1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #F7B801;
-            font-weight: bold;
-            font-size: 18px;
+            background: rgba(247,184,1,0.1);
+            display: flex; align-items: center; justify-content: center;
+            color: #F7B801; font-weight: bold; font-size: 18px;
         }
-
         .badge-anggota {
-            background: rgba(40, 167, 69, 0.1);
+            background: rgba(40,167,69,0.1);
             color: #1e7e34;
             padding: 4px 10px;
             border-radius: 20px;
             font-size: 11px;
         }
-
         .btn-action {
             background: transparent;
             border: none;
@@ -523,141 +257,82 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
             border-radius: 10px;
             transition: all 0.2s;
         }
+        .btn-action i { font-size: 14px; color: #999; }
+        .btn-action:hover i { color: #F7B801; }
+        .btn-action.danger:hover i { color: #dc3545; }
 
-        .btn-action i {
-            font-size: 14px;
-            color: #999;
-        }
-
-        .btn-action:hover i {
-            color: #F7B801;
-        }
-
-        .btn-action.danger:hover i {
-            color: #dc3545;
-        }
-
-        /* Modal Styles */
-        .modal-content {
-            border-radius: 20px;
-            overflow: hidden;
-            border: none;
-        }
-
-        .modal-header {
-            padding: 18px 24px;
-        }
-
-        .modal-header .modal-title {
-            font-size: 18px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .modal-header-gradient,
-        .modal-header-gradient-edit {
+        .modal-content { border-radius: 20px; overflow: hidden; border: none; }
+        .modal-header { padding: 18px 24px; }
+        .modal-header .modal-title { font-size: 18px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+        .modal-header-gradient, .modal-header-gradient-edit {
             background: linear-gradient(135deg, #F7B801, #E5A800);
-            color: #1A1A1A;
-            border: none;
+            color: #1A1A1A; border: none;
         }
-
-        .modal-header-gradient .btn-close,
-        .modal-header-gradient-edit .btn-close {
-            filter: brightness(0);
-        }
-
+        .modal-header-gradient .btn-close, .modal-header-gradient-edit .btn-close { filter: brightness(0); }
         .modal-header-gradient-detail {
             background: linear-gradient(135deg, #0D3B4F, #0A2A38);
             color: #F7B801;
         }
-
-        .modal-header-gradient-detail .modal-title {
-            color: #F7B801;
-        }
-
-        .modal-header-gradient-detail .btn-close {
-            filter: brightness(0) invert(1);
-        }
+        .modal-header-gradient-detail .modal-title { color: #F7B801; }
+        .modal-header-gradient-detail .btn-close { filter: brightness(0) invert(1); }
 
         .logo-preview {
-            width: 100px;
-            height: 100px;
+            width: 100px; height: 100px;
             object-fit: contain;
             border-radius: 16px;
-            border: 2px solid rgba(247, 184, 1, 0.3);
+            border: 2px solid rgba(247,184,1,0.3);
             background: #F8F8F8;
         }
-
         .logo-upload-area {
-            border: 2px dashed rgba(247, 184, 1, 0.3);
+            border: 2px dashed rgba(247,184,1,0.3);
             border-radius: 16px;
             padding: 20px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s;
         }
-
-        .logo-upload-area:hover {
-            border-color: #F7B801;
-            background: rgba(247, 184, 1, 0.05);
-        }
+        .logo-upload-area:hover { border-color: #F7B801; background: rgba(247,184,1,0.05); }
 
         .map-container {
             height: 350px;
             border-radius: 16px;
-            border: 1px solid rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(0,0,0,0.1);
             cursor: crosshair;
         }
-
-        .coordinate-input {
-            background: #F8F8F8;
-            font-weight: 600;
-            cursor: pointer;
-        }
-
+        .coordinate-input { background: #F8F8F8; font-weight: 600; cursor: pointer; }
         .detail-label {
-            font-weight: 600;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #F7B801;
+            font-weight: 600; font-size: 12px; text-transform: uppercase;
+            letter-spacing: 0.5px; color: #F7B801;
+        }
+        .required:after { content: ' *'; color: #F7B801; }
+
+        .swal2-popup {
+            font-family: 'Poppins', sans-serif !important;
+            border-radius: 20px !important;
+        }
+        .swal2-confirm {
+            background: linear-gradient(135deg, #F7B801, #E5A800) !important;
+            color: #1A1A1A !important;
+            border-radius: 12px !important;
+            font-weight: 600 !important;
+        }
+        .swal2-timer-progress-bar {
+            background: #F7B801 !important;
         }
 
-        .required:after {
-            content: ' *';
-            color: #F7B801;
-        }
-
-        /* Responsive */
         @media (max-width: 768px) {
-            .main-content {
-                margin-left: 0;
-                padding: 16px;
-            }
-
-            .card-header-custom {
-                flex-direction: column;
-                gap: 12px;
-                align-items: flex-start;
-            }
-
-            .filter-section .row {
-                flex-direction: column;
-                gap: 12px;
-            }
+            .main-content { margin-left: 0; padding: 16px; }
+            .card-header-custom { flex-direction: column; gap: 12px; align-items: flex-start; }
+            .filter-section .row { flex-direction: column; gap: 12px; }
+            .map-osm-container { height: 250px; }
         }
     </style>
 </head>
 
 <body>
 
-    <!-- Sidebar sudah di-include dari includes/sidebar.php -->
-
-    <!-- Main Content -->
+    <!-- Sidebar sudah di-include -->
     <div class="main-content">
-        <!-- Top Navbar -->
         <div class="top-navbar">
             <div class="page-title">
                 <h2>Data BPK</h2>
@@ -735,6 +410,22 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
             </form>
         </div>
 
+        <!-- ===== PETA OSM DI ATAS DAFTAR BPK ===== -->
+        <div class="card-custom">
+            <div class="card-header-custom">
+                <h3><i class="fas fa-map-marked-alt"></i> Peta Lokasi BPK</h3>
+                <span class="badge-stats"><i class="fas fa-map-pin"></i> <?= count($all_bpk_data) ?> BPK</span>
+            </div>
+            <div class="card-body" style="padding: 20px;">
+                <div class="map-osm-container">
+                    <div id="mapOSM"></div>
+                </div>
+                <div class="mt-2 text-muted">
+                    <small><i class="fas fa-info-circle"></i> Klik marker untuk melihat detail BPK</small>
+                </div>
+            </div>
+        </div>
+
         <!-- Table Card -->
         <div class="card-custom">
             <div class="card-header-custom">
@@ -758,45 +449,37 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if (!empty($all_bpk_data)): $no = 1;
-                                foreach ($all_bpk_data as $row): ?>
-                                    <tr id="row-<?= $row['id'] ?>">
-                                        <td><?= $no++ ?></td>
-                                        <td>
-                                            <?php if ($row['logo'] && file_exists('../../assets/img/uploads/logo/' . $row['logo'])): ?>
-                                                <img src="../../assets/img/uploads/logo/<?= $row['logo'] ?>" class="logo-thumb">
-                                            <?php else: ?>
-                                                <div class="logo-placeholder">
-                                                    <?= strtoupper(substr($row['nama_bpk'], 0, 1)) ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td><span class="reg-badge"><?= $row['nomor_registrasi'] ?></span></td>
-                                        <td><strong><?= htmlspecialchars($row['nama_bpk']) ?></strong></td>
-                                        <td><?= htmlspecialchars($row['kecamatan']) ?></td>
-                                        <td><?= htmlspecialchars($row['kelurahan']) ?></td>
-                                        <td>
-                                            <span class="badge-anggota">
-                                                <?= $row['anggota_aktif'] ?>/<?= $row['total_anggota'] ?>
-                                            </span>
-                                        </td>
-                                        <td><?= $row['tahun_berdiri'] ?></td>
-                                        <td>
-                                            <div class="btn-group">
-                                                <button class="btn-action" title="Detail" onclick="bukaModalDetail(<?= $row['id'] ?>)">
-                                                    <i class="fas fa-eye"></i>
-                                                </button>
-                                                <button class="btn-action" title="Edit" onclick="bukaModalEdit(<?= $row['id'] ?>)">
-                                                    <i class="fas fa-edit"></i>
-                                                </button>
-                                                <button class="btn-action danger" title="Hapus" onclick="hapusBPK(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nama_bpk'], ENT_QUOTES) ?>')">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach;
-                            else: ?>
+                            <?php if (!empty($all_bpk_data)): $no = 1; foreach ($all_bpk_data as $row): ?>
+                                <tr id="row-<?= $row['id'] ?>">
+                                    <td><?= $no++ ?></td>
+                                    <td>
+                                        <?php if ($row['logo'] && file_exists('../../assets/img/uploads/logo/' . $row['logo'])): ?>
+                                            <img src="../../assets/img/uploads/logo/<?= $row['logo'] ?>" class="logo-thumb">
+                                        <?php else: ?>
+                                            <div class="logo-placeholder"><?= strtoupper(substr($row['nama_bpk'], 0, 1)) ?></div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><span class="reg-badge"><?= $row['nomor_registrasi'] ?></span></td>
+                                    <td><strong><?= htmlspecialchars($row['nama_bpk']) ?></strong></td>
+                                    <td><?= htmlspecialchars($row['kecamatan']) ?></td>
+                                    <td><?= htmlspecialchars($row['kelurahan']) ?></td>
+                                    <td><span class="badge-anggota"><?= $row['anggota_aktif'] ?>/<?= $row['total_anggota'] ?></span></td>
+                                    <td><?= $row['tahun_berdiri'] ?></td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <button class="btn-action" title="Detail" onclick="bukaModalDetail(<?= $row['id'] ?>)">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <button class="btn-action" title="Edit" onclick="bukaModalEdit(<?= $row['id'] ?>)">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="btn-action danger" title="Hapus" onclick="hapusBPK(<?= $row['id'] ?>, '<?= htmlspecialchars($row['nama_bpk'], ENT_QUOTES) ?>')">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; else: ?>
                                 <tr>
                                     <td colspan="9" class="text-center py-5">
                                         <i class="fas fa-building fa-3x mb-3 d-block" style="color: #999;"></i>
@@ -814,7 +497,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
         </div>
     </div>
 
-    <!-- ==================== MODAL TAMBAH ==================== -->
+    <!-- MODAL TAMBAH -->
     <div class="modal fade" id="modalTambah" tabindex="-1" data-bs-backdrop="static">
         <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content">
@@ -822,8 +505,16 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                     <h5 class="modal-title"><i class="fas fa-plus-circle"></i>Tambah BPK</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <form id="formTambah" enctype="multipart/form-data">
+                <form id="formTambah" enctype="multipart/form-data" action="save_bpk.php" method="POST">
                     <div class="modal-body">
+                        <div class="alert alert-info alert-dismissible fade show" role="alert" style="border-radius: 12px; border-left: 4px solid #F7B801;">
+                            <i class="fas fa-info-circle me-2" style="color: #F7B801;"></i>
+                            <strong>Informasi:</strong> Setelah BPK ditambahkan, akan otomatis dibuatkan akun Admin BPK dengan:
+                            <br>
+                            <strong>Username:</strong> <code>admin_bpk_[nomor_registrasi]</code> &nbsp;|&nbsp; 
+                            <strong>Password default:</strong> <code>admin123</code>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="row">
@@ -870,8 +561,8 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                                 </div>
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
-                                        <label class="form-label">Tahun Berdiri</label>
-                                        <input type="number" name="tahun_berdiri" class="form-control" placeholder="2020" min="2000" max="2030">
+                                        <label class="form-label">Tahun Berdiri <span style="color: #F7B801;">(2000-2030)</span></label>
+                                        <input type="number" name="tahun_berdiri" class="form-control" placeholder="2000" min="2000" max="2030" value="2000">
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">Logo BPK</label>
@@ -895,14 +586,14 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn-outline-gold" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn-gold"><i class="fas fa-save me-1"></i> Simpan BPK</button>
+                        <button type="submit" class="btn-gold" id="submitTambah"><i class="fas fa-save me-1"></i> Simpan BPK</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- ==================== MODAL EDIT ==================== -->
+    <!-- MODAL EDIT -->
     <div class="modal fade" id="modalEdit" tabindex="-1" data-bs-backdrop="static">
         <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content">
@@ -910,20 +601,20 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                     <h5 class="modal-title"><i class="fas fa-edit"></i>Edit BPK</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <form id="formEdit" enctype="multipart/form-data">
+                <form id="formEdit" enctype="multipart/form-data" action="save_bpk.php" method="POST">
                     <input type="hidden" name="id" id="edit_id">
                     <input type="hidden" name="logo_lama" id="edit_logo_lama">
                     <div class="modal-body" id="editContent"></div>
                     <div class="modal-footer">
                         <button type="button" class="btn-outline-gold" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn-gold"><i class="fas fa-save me-1"></i> Update BPK</button>
+                        <button type="submit" class="btn-gold" id="submitEdit"><i class="fas fa-save me-1"></i> Update BPK</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- ==================== MODAL DETAIL ==================== -->
+    <!-- MODAL DETAIL -->
     <div class="modal fade" id="modalDetail" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
@@ -951,6 +642,69 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
         let mapTambah, markerTambah;
         let mapEdit, markerEdit;
 
+        // ============================================================
+        // PETA OSM DI ATAS DAFTAR BPK
+        // ============================================================
+        function initMapOSM() {
+            const mapOSM = L.map('mapOSM').setView([-3.468, 114.832], 12);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                maxZoom: 19
+            }).addTo(mapOSM);
+            
+            // Tambahkan marker untuk setiap BPK yang memiliki koordinat
+            const bpkArray = Object.values(bpkData);
+            let hasMarker = false;
+            
+            bpkArray.forEach(function(bpk) {
+                if (bpk.latitude && bpk.longitude && bpk.latitude != 0 && bpk.longitude != 0) {
+                    hasMarker = true;
+                    const lat = parseFloat(bpk.latitude);
+                    const lng = parseFloat(bpk.longitude);
+                    
+                    const marker = L.marker([lat, lng], {
+                        icon: L.divIcon({
+                            className: 'custom-marker',
+                            html: `<div style="background: #F7B801; color: #1A1A1A; border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">${bpk.nomor_registrasi}</div>`,
+                            iconSize: [32, 32],
+                            iconAnchor: [16, 16]
+                        })
+                    }).addTo(mapOSM);
+                    
+                    marker.bindPopup(`
+                        <div style="font-family: 'Poppins', sans-serif; font-size: 13px;">
+                            <strong style="color: #F7B801;">${escapeHtml(bpk.nama_bpk)}</strong><br>
+                            <small>Reg: ${bpk.nomor_registrasi}</small><br>
+                            ${escapeHtml(bpk.kecamatan || '')} - ${escapeHtml(bpk.kelurahan || '')}<br>
+                            <a href="#" onclick="bukaModalDetail(${bpk.id})" style="color: #F7B801; text-decoration: none;">
+                                <i class="fas fa-eye"></i> Lihat Detail
+                            </a>
+                        </div>
+                    `);
+                }
+            });
+            
+            if (hasMarker) {
+                // Fit bounds ke semua marker
+                const bounds = [];
+                bpkArray.forEach(function(bpk) {
+                    if (bpk.latitude && bpk.longitude && bpk.latitude != 0 && bpk.longitude != 0) {
+                        bounds.push([parseFloat(bpk.latitude), parseFloat(bpk.longitude)]);
+                    }
+                });
+                if (bounds.length > 0) {
+                    mapOSM.fitBounds(bounds, { padding: [50, 50] });
+                }
+            } else {
+                // Tampilkan pesan jika tidak ada marker
+                mapOSM.setView([-3.468, 114.832], 12);
+            }
+        }
+
+        // ============================================================
+        // FUNGSI UTILITY
+        // ============================================================
         function formatRegistrasi(input) {
             input.value = input.value.replace(/[^0-9]/g, '').substring(0, 3);
         }
@@ -978,6 +732,19 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
             }
         }
 
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        // ============================================================
+        // MAP FUNCTIONS (Modal)
+        // ============================================================
         function initMapTambah() {
             if (mapTambah) {
                 mapTambah.invalidateSize();
@@ -1000,9 +767,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                 if (markerTambah) {
                     markerTambah.setLatLng(e.latlng);
                 } else {
-                    markerTambah = L.marker(e.latlng, {
-                        draggable: true
-                    }).addTo(mapTambah);
+                    markerTambah = L.marker(e.latlng, { draggable: true }).addTo(mapTambah);
                     markerTambah.on('dragend', function() {
                         const pos = markerTambah.getLatLng();
                         document.getElementById('latTambah').value = pos.lat.toFixed(8);
@@ -1012,6 +777,9 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
             });
         }
 
+        // ============================================================
+        // MODAL OPEN FUNCTIONS
+        // ============================================================
         function bukaModalTambah() {
             document.getElementById('formTambah').reset();
             document.getElementById('kelurahanTambah').innerHTML = '<option value="">Pilih Kecamatan dulu</option>';
@@ -1030,9 +798,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                         markerTambah = null;
                     }
                 }, 200);
-            }, {
-                once: true
-            });
+            }, { once: true });
         }
 
         function bukaModalEdit(id) {
@@ -1095,8 +861,8 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Tahun Berdiri</label>
-                                <input type="number" name="tahun_berdiri" class="form-control" value="${data.tahun_berdiri || ''}">
+                                <label class="form-label">Tahun Berdiri <span style="color: #F7B801;">(2000-2030)</span></label>
+                                <input type="number" name="tahun_berdiri" class="form-control" value="${data.tahun_berdiri || 2000}" min="2000" max="2030">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Logo BPK</label>
@@ -1134,9 +900,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                     }).addTo(mapEdit);
 
                     if (data.latitude && data.longitude) {
-                        markerEdit = L.marker([lat, lng], {
-                            draggable: true
-                        }).addTo(mapEdit);
+                        markerEdit = L.marker([lat, lng], { draggable: true }).addTo(mapEdit);
                         markerEdit.on('dragend', function() {
                             const pos = markerEdit.getLatLng();
                             document.getElementById('latEdit').value = pos.lat.toFixed(8);
@@ -1152,9 +916,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                         if (markerEdit) {
                             markerEdit.setLatLng(e.latlng);
                         } else {
-                            markerEdit = L.marker(e.latlng, {
-                                draggable: true
-                            }).addTo(mapEdit);
+                            markerEdit = L.marker(e.latlng, { draggable: true }).addTo(mapEdit);
                             markerEdit.on('dragend', function() {
                                 const pos = markerEdit.getLatLng();
                                 document.getElementById('latEdit').value = pos.lat.toFixed(8);
@@ -1164,19 +926,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                     });
                     mapEdit.invalidateSize();
                 }, 300);
-            }, {
-                once: true
-            });
-        }
-
-        function escapeHtml(str) {
-            if (!str) return '';
-            return str.replace(/[&<>]/g, function(m) {
-                if (m === '&') return '&amp;';
-                if (m === '<') return '&lt;';
-                if (m === '>') return '&gt;';
-                return m;
-            });
+            }, { once: true });
         }
 
         function bukaModalDetail(id) {
@@ -1226,111 +976,309 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                     }
                     mapDetail.invalidateSize();
                 }, 300);
-            }, {
-                once: true
-            });
+            }, { once: true });
         }
 
-        // Form Submit Tambah
-        document.getElementById('formTambah').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const lat = document.getElementById('latTambah').value;
-            const lng = document.getElementById('lngTambah').value;
-            if (!lat || !lng) {
-                Swal.fire('Perhatian!', 'Silakan klik pada peta untuk memilih koordinat BPK!', 'warning');
-                return;
-            }
-            const formData = new FormData(this);
-            formData.append('action', 'tambah');
-            Swal.fire({
-                title: 'Menyimpan...',
-                allowOutsideClick: false,
-                didOpen: () => Swal.showLoading()
-            });
-            fetch('index.php', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(res => res.json())
-                .then(data => {
-                    Swal.close();
-                    if (data.success) {
-                        Swal.fire('Sukses!', data.message, 'success').then(() => location.reload());
-                    } else {
-                        Swal.fire('Error!', data.message, 'error');
-                    }
-                });
-        });
-
-        // Form Submit Edit
-        document.getElementById('formEdit').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const lat = document.getElementById('latEdit').value;
-            const lng = document.getElementById('lngEdit').value;
-            if (!lat || !lng) {
-                Swal.fire('Perhatian!', 'Silakan klik pada peta untuk memilih koordinat!', 'warning');
-                return;
-            }
-            const formData = new FormData(this);
-            formData.append('action', 'edit');
-            Swal.fire({
-                title: 'Mengupdate...',
-                allowOutsideClick: false,
-                didOpen: () => Swal.showLoading()
-            });
-            fetch('index.php', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(res => res.json())
-                .then(data => {
-                    Swal.close();
-                    if (data.success) {
-                        Swal.fire('Sukses!', data.message, 'success').then(() => location.reload());
-                    } else {
-                        Swal.fire('Error!', data.message, 'error');
-                    }
-                });
-        });
-
+        // ============================================================
+        // HAPUS BPK
+        // ============================================================
         function hapusBPK(id, nama) {
             Swal.fire({
                 title: 'Yakin hapus?',
-                html: `<strong>${escapeHtml(nama)}</strong> akan dihapus permanen!`,
+                html: `<strong>${escapeHtml(nama)}</strong> akan dihapus permanen!<br>Akun Admin BPK juga akan ikut terhapus.`,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#F7B801',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Ya, Hapus!',
-                cancelButtonText: 'Batal'
+                cancelButtonText: 'Batal',
+                reverseButtons: true,
+                customClass: {
+                    popup: 'swal2-popup',
+                    confirmButton: 'swal2-confirm'
+                }
             }).then((result) => {
                 if (result.isConfirmed) {
+                    Swal.fire({
+                        title: 'Menghapus...',
+                        allowOutsideClick: false,
+                        didOpen: () => { Swal.showLoading(); }
+                    });
+                    
                     const formData = new FormData();
                     formData.append('action', 'hapus');
                     formData.append('id', id);
-                    fetch('index.php', {
-                            method: 'POST',
-                            body: formData
-                        })
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data.success) {
-                                Swal.fire('Terhapus!', data.message, 'success').then(() => location.reload());
-                            } else {
-                                Swal.fire('Gagal!', data.message, 'error');
+                    
+                    fetch('save_bpk.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(res => {
+                        const contentType = res.headers.get('content-type');
+                        if (!contentType || !contentType.includes('application/json')) {
+                            throw new Error('Server error: ' + res.status);
+                        }
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Terhapus!',
+                                text: data.message,
+                                timer: 2000,
+                                timerProgressBar: true,
+                                showConfirmButton: true,
+                                customClass: {
+                                    popup: 'swal2-popup',
+                                    confirmButton: 'swal2-confirm'
+                                }
+                            }).then(() => location.reload());
+                        } else {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Gagal!',
+                                text: data.message,
+                                customClass: {
+                                    popup: 'swal2-popup',
+                                    confirmButton: 'swal2-confirm'
+                                }
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error!',
+                            text: 'Terjadi kesalahan: ' + error.message,
+                            customClass: {
+                                popup: 'swal2-popup',
+                                confirmButton: 'swal2-confirm'
                             }
                         });
+                    });
                 }
             });
         }
 
-        // Dropdown
+        // ============================================================
+        // SUBMIT FORM TAMBAH
+        // ============================================================
+        document.getElementById('formTambah').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const lat = document.getElementById('latTambah').value;
+            const lng = document.getElementById('lngTambah').value;
+            if (!lat || !lng) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Perhatian!',
+                    text: 'Silakan klik pada peta untuk memilih koordinat BPK!',
+                    customClass: {
+                        popup: 'swal2-popup',
+                        confirmButton: 'swal2-confirm'
+                    }
+                });
+                return;
+            }
+            
+            // Validasi tahun berdiri
+            const tahun = parseInt(document.querySelector('input[name="tahun_berdiri"]').value);
+            if (isNaN(tahun) || tahun < 2000 || tahun > 2030) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Perhatian!',
+                    text: 'Tahun berdiri harus antara 2000 - 2030!',
+                    customClass: {
+                        popup: 'swal2-popup',
+                        confirmButton: 'swal2-confirm'
+                    }
+                });
+                return;
+            }
+            
+            Swal.fire({
+                title: 'Menyimpan Data...',
+                text: 'Mohon tunggu sebentar',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); },
+                customClass: {
+                    popup: 'swal2-popup'
+                }
+            });
+            
+            const formData = new FormData(this);
+            formData.append('action', 'tambah');
+            
+            fetch('save_bpk.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => {
+                const contentType = res.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Server error: ' + res.status);
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Sukses!',
+                        html: data.message,
+                        timer: 3000,
+                        timerProgressBar: true,
+                        showConfirmButton: true,
+                        customClass: {
+                            popup: 'swal2-popup',
+                            confirmButton: 'swal2-confirm'
+                        }
+                    }).then(() => location.reload());
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error!',
+                        text: data.message,
+                        customClass: {
+                            popup: 'swal2-popup',
+                            confirmButton: 'swal2-confirm'
+                        }
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error!',
+                    text: error.message || 'Terjadi kesalahan pada server. Silakan coba lagi.',
+                    customClass: {
+                        popup: 'swal2-popup',
+                        confirmButton: 'swal2-confirm'
+                    }
+                });
+            });
+        });
+
+        // ============================================================
+        // SUBMIT FORM EDIT
+        // ============================================================
+        document.getElementById('formEdit').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const lat = document.getElementById('latEdit').value;
+            const lng = document.getElementById('lngEdit').value;
+            if (!lat || !lng) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Perhatian!',
+                    text: 'Silakan klik pada peta untuk memilih koordinat!',
+                    customClass: {
+                        popup: 'swal2-popup',
+                        confirmButton: 'swal2-confirm'
+                    }
+                });
+                return;
+            }
+            
+            // Validasi tahun berdiri
+            const tahun = parseInt(document.querySelector('input[name="tahun_berdiri"]').value);
+            if (isNaN(tahun) || tahun < 2000 || tahun > 2030) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Perhatian!',
+                    text: 'Tahun berdiri harus antara 2000 - 2030!',
+                    customClass: {
+                        popup: 'swal2-popup',
+                        confirmButton: 'swal2-confirm'
+                    }
+                });
+                return;
+            }
+            
+            Swal.fire({
+                title: 'Mengupdate Data...',
+                text: 'Mohon tunggu sebentar',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); },
+                customClass: {
+                    popup: 'swal2-popup'
+                }
+            });
+            
+            const formData = new FormData(this);
+            formData.append('action', 'edit');
+            
+            fetch('save_bpk.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => {
+                const contentType = res.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Server error: ' + res.status);
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Sukses!',
+                        text: data.message,
+                        timer: 2000,
+                        timerProgressBar: true,
+                        showConfirmButton: true,
+                        customClass: {
+                            popup: 'swal2-popup',
+                            confirmButton: 'swal2-confirm'
+                        }
+                    }).then(() => location.reload());
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error!',
+                        text: data.message,
+                        customClass: {
+                            popup: 'swal2-popup',
+                            confirmButton: 'swal2-confirm'
+                        }
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error!',
+                    text: error.message || 'Terjadi kesalahan pada server. Silakan coba lagi.',
+                    customClass: {
+                        popup: 'swal2-popup',
+                        confirmButton: 'swal2-confirm'
+                    }
+                });
+            });
+        });
+
+        // ============================================================
+        // DROPDOWN
+        // ============================================================
         document.getElementById('userAvatar').addEventListener('click', function(e) {
             e.stopPropagation();
             document.getElementById('dropdownMenu').classList.toggle('show');
         });
         document.addEventListener('click', function() {
             document.getElementById('dropdownMenu').classList.remove('show');
+        });
+
+        // ============================================================
+        // INITIALIZE - Peta OSM di atas daftar BPK
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() {
+                initMapOSM();
+            }, 300);
         });
     </script>
 </body>

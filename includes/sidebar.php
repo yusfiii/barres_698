@@ -276,6 +276,13 @@ $role = isset($_SESSION['role']) ? $_SESSION['role'] : '';
                     <span>Laporan</span>
                 </a>
             </li>
+            <!-- Di dalam menu superadmin, tambahkan setelah Data Akun atau sebelum Laporan -->
+<li class="nav-item">
+    <a href="/barres_698/superadmin/log-aktivitas/" class="nav-link <?= strpos($current_page, 'log-aktivitas') !== false ? 'active' : '' ?>">
+        <i class="fas fa-history"></i>
+        <span>Log Aktivitas</span>
+    </a>
+</li>
         <?php else: ?>
             <!-- MENU ADMIN BPK -->
             <li class="nav-item">

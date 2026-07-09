@@ -34,54 +34,16 @@ function validatePhoneNumber($phone) {
     return preg_match('/^(08|8)[0-9]{8,12}$/', $phone);
 }
 
+/**
+ * Validasi username (hanya alfanumerik, underscore, dan titik)
+ */
+function validateUsername($username) {
+    return preg_match('/^[a-zA-Z0-9_.]+$/', $username);
+}
+
 // ============================================================
 // SESSION & FLASH MESSAGE
 // ============================================================
-
-/**
- * Cek login
- */
-// function isLoggedIn() {
-//     return isset($_SESSION['user_id']);
-// }
-
-/**
- * Cek role
- */
-// function checkAuth() {
-//     if (!isLoggedIn()) {
-//         header('Location: ../login.php');
-//         exit();
-//     }
-// }
-
-// function checkRole($roles) {
-//     if (!is_array($roles)) {
-//         $roles = [$roles];
-//     }
-//     if (!in_array($_SESSION['role'], $roles)) {
-//         header('Location: ../unauthorized.php');
-//         exit();
-//     }
-// }
-
-/**
- * Get current user
- */
-// function getCurrentUser() {
-//     if (!isLoggedIn()) {
-//         return null;
-//     }
-//     $conn = getConnection();
-//     $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
-//     $stmt->bind_param("i", $_SESSION['user_id']);
-//     $stmt->execute();
-//     $result = $stmt->get_result();
-//     $user = $result->fetch_assoc();
-//     $stmt->close();
-//     $conn->close();
-//     return $user;
-// }
 
 /**
  * Flash Message
@@ -168,6 +130,39 @@ function deleteFile($filename, $target_dir = "assets/img/uploads/") {
         return unlink($filepath);
     }
     return false;
+}
+
+/**
+ * Upload foto dengan nama unik (alias)
+ */
+function uploadFoto($file, $folder = 'foto/', $maxSize = 5) {
+    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    $maxSizeBytes = $maxSize * 1024 * 1024;
+    
+    // Cek ekstensi
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, $allowed)) {
+        return ['success' => false, 'message' => 'Format file tidak didukung. Gunakan: ' . implode(', ', $allowed)];
+    }
+    
+    // Cek ukuran
+    if ($file['size'] > $maxSizeBytes) {
+        return ['success' => false, 'message' => 'Ukuran file terlalu besar. Maksimal ' . $maxSize . 'MB'];
+    }
+    
+    // Buat nama unik
+    $filename = date('Ymd_His') . '_' . uniqid() . '.' . $ext;
+    $path = 'assets/img/uploads/' . $folder;
+    
+    if (!is_dir($path)) {
+        mkdir($path, 0777, true);
+    }
+    
+    if (move_uploaded_file($file['tmp_name'], $path . $filename)) {
+        return ['success' => true, 'filename' => $filename];
+    }
+    
+    return ['success' => false, 'message' => 'Gagal mengupload file'];
 }
 
 // ============================================================
@@ -297,30 +292,33 @@ function decimalToDms($decimal, $type = 'lat') {
 
 /**
  * Get heatmap settings
+ * Catatan: Fungsi ini sudah ada di config.php, tapi kita biarkan untuk kompatibilitas
  */
-// function getHeatmapSettings() {
-//     $conn = getConnection();
-//     $result = $conn->query("SELECT * FROM heatmap_settings ORDER BY id DESC LIMIT 1");
-//     $settings = $result->fetch_assoc();
-//     $conn->close();
-    
-//     if (!$settings) {
-//         return [
-//             'radius' => 25,
-//             'blur' => 15,
-//             'intensity' => 70
-//         ];
-//     }
-    
-//     return $settings;
-// }
+if (!function_exists('getHeatmapSettings')) {
+    function getHeatmapSettings() {
+        $conn = getConnection();
+        $result = $conn->query("SELECT * FROM heatmap_settings ORDER BY id DESC LIMIT 1");
+        $settings = $result->fetch_assoc();
+        $conn->close();
+        
+        if (!$settings) {
+            return [
+                'radius' => 25,
+                'blur' => 15,
+                'intensity' => 70
+            ];
+        }
+        
+        return $settings;
+    }
+}
 
 // ============================================================
 // STATISTICS
 // ============================================================
 
 /**
- * Get Statistics
+ * Get Statistics - FIXED
  */
 function getStatistics() {
     $conn = getConnection();
@@ -411,28 +409,78 @@ function getKecamatanStats($bulan = null) {
     return $data;
 }
 
+/**
+ * Get Kecamatan list with total kejadian untuk dashboard
+ */
+function getKecamatanStatsDashboard() {
+    $conn = getConnection();
+    $result = $conn->query("
+        SELECT kecamatan, COUNT(*) as total 
+        FROM kejadian_kebakaran 
+        WHERE kecamatan IS NOT NULL 
+        GROUP BY kecamatan 
+        ORDER BY total DESC
+        LIMIT 5
+    ");
+    $data = [];
+    while ($row = $result->fetch_assoc()) {
+        $data[] = $row;
+    }
+    $conn->close();
+    return $data;
+}
+
+/**
+ * Get bulan list dengan total kejadian untuk chart
+ */
+function getBulanStats($tahun = null) {
+    if (!$tahun) $tahun = date('Y');
+    
+    $conn = getConnection();
+    $result = $conn->query("
+        SELECT 
+            DATE_FORMAT(waktu, '%m') as bulan,
+            DATE_FORMAT(waktu, '%M') as nama_bulan,
+            COUNT(*) as total
+        FROM kejadian_kebakaran 
+        WHERE YEAR(waktu) = $tahun
+        GROUP BY DATE_FORMAT(waktu, '%m')
+        ORDER BY bulan
+    ");
+    
+    $data = [];
+    while ($row = $result->fetch_assoc()) {
+        $data[] = $row;
+    }
+    $conn->close();
+    return $data;
+}
+
 // ============================================================
 // FORMAT TANGGAL & WAKTU
 // ============================================================
 
 /**
  * Format tanggal Indonesia
+ * Catatan: Fungsi ini sudah ada di config.php
  */
-function formatTanggal($date, $format = 'd F Y H:i') {
-    $months = [
-        1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 
-        4 => 'April', 5 => 'Mei', 6 => 'Juni',
-        7 => 'Juli', 8 => 'Agustus', 9 => 'September',
-        10 => 'Oktober', 11 => 'November', 12 => 'Desember'
-    ];
-    
-    $timestamp = strtotime($date);
-    $day = date('d', $timestamp);
-    $month = (int)date('m', $timestamp);
-    $year = date('Y', $timestamp);
-    $time = date('H:i', $timestamp);
-    
-    return $day . ' ' . $months[$month] . ' ' . $year . ' ' . $time;
+if (!function_exists('formatTanggal')) {
+    function formatTanggal($date, $format = 'd F Y H:i') {
+        $months = [
+            1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 
+            4 => 'April', 5 => 'Mei', 6 => 'Juni',
+            7 => 'Juli', 8 => 'Agustus', 9 => 'September',
+            10 => 'Oktober', 11 => 'November', 12 => 'Desember'
+        ];
+        
+        $timestamp = strtotime($date);
+        $day = date('d', $timestamp);
+        $month = (int)date('m', $timestamp);
+        $year = date('Y', $timestamp);
+        $time = date('H:i', $timestamp);
+        
+        return $day . ' ' . $months[$month] . ' ' . $year . ' ' . $time;
+    }
 }
 
 /**
@@ -564,59 +612,25 @@ function formatPersen($value, $total) {
 }
 
 // ============================================================
-// FILE UPLOAD HELPER
-// ============================================================
-
-/**
- * Upload foto dengan nama unik
- */
-function uploadFoto($file, $folder = 'foto/', $maxSize = 5) {
-    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-    $maxSizeBytes = $maxSize * 1024 * 1024;
-    
-    // Cek ekstensi
-    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, $allowed)) {
-        return ['success' => false, 'message' => 'Format file tidak didukung. Gunakan: ' . implode(', ', $allowed)];
-    }
-    
-    // Cek ukuran
-    if ($file['size'] > $maxSizeBytes) {
-        return ['success' => false, 'message' => 'Ukuran file terlalu besar. Maksimal ' . $maxSize . 'MB'];
-    }
-    
-    // Buat nama unik
-    $filename = date('Ymd_His') . '_' . uniqid() . '.' . $ext;
-    $path = 'assets/img/uploads/' . $folder;
-    
-    if (!is_dir($path)) {
-        mkdir($path, 0777, true);
-    }
-    
-    if (move_uploaded_file($file['tmp_name'], $path . $filename)) {
-        return ['success' => true, 'filename' => $filename];
-    }
-    
-    return ['success' => false, 'message' => 'Gagal mengupload file'];
-}
-
-// ============================================================
 // LAPORAN HELPER
 // ============================================================
 
 /**
  * Generate nomor surat otomatis
+ * Catatan: Fungsi ini sudah ada di config.php
  */
-function generateNomorSurat($jenis = 'BARRES698', $bulan = null, $tahun = null) {
-    if (!$bulan) $bulan = date('m');
-    if (!$tahun) $tahun = date('Y');
-    
-    $conn = getConnection();
-    $result = $conn->query("SELECT COUNT(*) as total FROM kejadian_kebakaran WHERE MONTH(waktu) = $bulan AND YEAR(waktu) = $tahun");
-    $count = $result->fetch_assoc()['total'] + 1;
-    $conn->close();
-    
-    return sprintf("%03d", $count) . '/' . $jenis . '/' . $bulan . '/' . $tahun;
+if (!function_exists('generateNomorSurat')) {
+    function generateNomorSurat($jenis = 'BARRES698', $bulan = null, $tahun = null) {
+        if (!$bulan) $bulan = date('m');
+        if (!$tahun) $tahun = date('Y');
+        
+        $conn = getConnection();
+        $result = $conn->query("SELECT COUNT(*) as total FROM kejadian_kebakaran WHERE MONTH(waktu) = $bulan AND YEAR(waktu) = $tahun");
+        $count = $result->fetch_assoc()['total'] + 1;
+        $conn->close();
+        
+        return sprintf("%03d", $count) . '/' . $jenis . '/' . $bulan . '/' . $tahun;
+    }
 }
 
 /**
@@ -658,12 +672,24 @@ function isActiveMenu($menu, $currentPage) {
 }
 
 /**
- * Check if user has permission
+ * Get role badge class
  */
-// function hasPermission($permission) {
-//     // Implementasi permission jika diperlukan
-//     return true;
-// }
+function getRoleBadgeClass($role) {
+    if ($role == 'super_admin') {
+        return 'badge-role-super';
+    }
+    return 'badge-role-bpk';
+}
+
+/**
+ * Get role label
+ */
+function getRoleLabel($role) {
+    if ($role == 'super_admin') {
+        return 'Super Admin';
+    }
+    return 'Admin BPK';
+}
 
 // ============================================================
 // SECURITY
@@ -704,21 +730,7 @@ function verifyPassword($password, $hash) {
 }
 
 // ============================================================
-// DEBUG (Hanya untuk development)
-// ============================================================
-
-/**
- * Debug function (hanya untuk development)
- */
-function debug($data, $die = false) {
-    echo '<pre style="background: #f4f4f4; padding: 15px; border-radius: 8px; margin: 10px 0; border: 1px solid #ddd; font-size: 13px; max-height: 500px; overflow: auto;">';
-    print_r($data);
-    echo '</pre>';
-    if ($die) die();
-}
-
-// ============================================================
-// CURL HELPER (Alternatif jika curl tidak tersedia)
+// HTTP REQUEST
 // ============================================================
 
 /**
@@ -782,51 +794,66 @@ function paginate($total, $perPage = 10, $currentPage = 1, $baseUrl = '') {
     return implode("\n", $links);
 }
 
+// ============================================================
+// LOGGING WRAPPER - HANYA DI FUNCTIONS.PHP
+// ============================================================
+
 /**
- * Get Kecamatan list with total kejadian untuk dashboard
+ * Fungsi wrapper untuk logging dengan auto detect user
+ * Gunakan ini untuk mencatat aktivitas dengan mudah
+ * Fungsi ini memanggil logAktivitas() yang ada di config.php
  */
-function getKecamatanStatsDashboard() {
-    $conn = getConnection();
-    $result = $conn->query("
-        SELECT kecamatan, COUNT(*) as total 
-        FROM kejadian_kebakaran 
-        WHERE kecamatan IS NOT NULL 
-        GROUP BY kecamatan 
-        ORDER BY total DESC
-        LIMIT 5
-    ");
-    $data = [];
-    while ($row = $result->fetch_assoc()) {
-        $data[] = $row;
-    }
-    $conn->close();
-    return $data;
+// if (!function_exists('logActivity')) {
+//     function logActivity($aktivitas) {
+//         if (isset($_SESSION['user_id'])) {
+//             return logAktivitas($aktivitas, $_SESSION['user_id']);
+//         }
+//         return false;
+//     }
+// }
+
+/**
+ * Log aktivitas spesifik untuk CRUD
+ */
+// function logCrud($action, $table, $id = null, $detail = null) {
+//     $messages = [
+//         'create' => 'Menambahkan data ' . $table,
+//         'update' => 'Mengubah data ' . $table,
+//         'delete' => 'Menghapus data ' . $table,
+//         'view' => 'Melihat data ' . $table,
+//     ];
+    
+//     $message = $messages[$action] ?? 'Melakukan aksi ' . $action . ' pada ' . $table;
+//     if ($id) {
+//         $message .= ' ID: ' . $id;
+//     }
+//     if ($detail) {
+//         $message .= ' (' . $detail . ')';
+//     }
+    
+//     return logActivity($message);
+// }
+
+// ============================================================
+// DEBUG (Hanya untuk development)
+// ============================================================
+
+/**
+ * Debug function (hanya untuk development)
+ */
+function debug($data, $die = false) {
+    echo '<pre style="background: #f4f4f4; padding: 15px; border-radius: 8px; margin: 10px 0; border: 1px solid #ddd; font-size: 13px; max-height: 500px; overflow: auto;">';
+    print_r($data);
+    echo '</pre>';
+    if ($die) die();
 }
 
 /**
- * Get bulan list dengan total kejadian untuk chart
+ * Debug dengan format JSON
  */
-function getBulanStats($tahun = null) {
-    if (!$tahun) $tahun = date('Y');
-    
-    $conn = getConnection();
-    $result = $conn->query("
-        SELECT 
-            DATE_FORMAT(waktu, '%m') as bulan,
-            DATE_FORMAT(waktu, '%M') as nama_bulan,
-            COUNT(*) as total
-        FROM kejadian_kebakaran 
-        WHERE YEAR(waktu) = $tahun
-        GROUP BY DATE_FORMAT(waktu, '%m')
-        ORDER BY bulan
-    ");
-    
-    $data = [];
-    while ($row = $result->fetch_assoc()) {
-        $data[] = $row;
-    }
-    $conn->close();
-    return $data;
+function debugJson($data, $die = false) {
+    header('Content-Type: application/json');
+    echo json_encode($data, JSON_PRETTY_PRINT);
+    if ($die) die();
 }
-
 ?>

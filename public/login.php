@@ -1,6 +1,5 @@
 <?php
 require_once __DIR__ . '/../includes/config.php';
-require_once __DIR__ . '/../includes/session.php';
 
 // Redirect if already logged in
 if (isLoggedIn()) {
@@ -14,6 +13,7 @@ if (isLoggedIn()) {
 
 $error = '';
 $show_animation = false;
+$redirect_url = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $username = $_POST['username'];
@@ -28,10 +28,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if ($result->num_rows > 0) {
         $user = $result->fetch_assoc();
         if (password_verify($password, $user['password'])) {
+            // Set session
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['username'];
             $_SESSION['role'] = $user['role'];
             $_SESSION['bpk_id'] = $user['bpk_id'];
+            $_SESSION['logged_logged'] = true;
+
+            // LOG LOGIN - panggil fungsi dari config.php
+            logAktivitas('Login ke sistem', $user['id']);
 
             $show_animation = true;
             $redirect_url = ($user['role'] == 'super_admin') ? '../superadmin/dashboard.php' : '../adminbpk/dashboard.php';
@@ -41,6 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } else {
         $error = 'Username tidak ditemukan!';
     }
+    
+    // Tutup statement dan connection
     $stmt->close();
     $conn->close();
 }

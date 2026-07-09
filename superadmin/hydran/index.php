@@ -54,8 +54,20 @@ $conn = getConnection();
 $query = "SELECT * FROM hydrant ORDER BY created_at DESC";
 $result = $conn->query($query);
 $hydrants = [];
+$coordinates = [];
 while ($row = $result->fetch_assoc()) {
     $hydrants[] = $row;
+    if (!empty($row['latitude']) && !empty($row['longitude']) && $row['latitude'] != 0 && $row['longitude'] != 0) {
+        $coordinates[] = [
+            'lat' => (float)$row['latitude'],
+            'lng' => (float)$row['longitude'],
+            'alamat' => $row['alamat'],
+            'kecamatan' => $row['kecamatan'],
+            'kelurahan' => $row['kelurahan'],
+            'status' => $row['status'],
+            'id' => $row['id']
+        ];
+    }
 }
 $total_hydrant = count($hydrants);
 $berfungsi = $conn->query("SELECT COUNT(*) as total FROM hydrant WHERE status = 'berfungsi'")->fetch_assoc()['total'];
@@ -81,6 +93,7 @@ foreach ($hydrants as $row) {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" />
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -189,7 +202,6 @@ foreach ($hydrants as $row) {
                 opacity: 0;
                 transform: translateY(-10px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -262,6 +274,18 @@ foreach ($hydrants as $row) {
             color: #666;
         }
 
+        /* Peta OSM di atas daftar */
+        .map-osm-container {
+            height: 400px;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+        #mapOSM {
+            height: 100%;
+            width: 100%;
+        }
+
         .btn-tambah {
             background: linear-gradient(135deg, #F7B801, #E5A800);
             border: none;
@@ -286,6 +310,7 @@ foreach ($hydrants as $row) {
             border: 1px solid rgba(0, 0, 0, 0.08);
             border-radius: 20px;
             overflow: hidden;
+            margin-bottom: 28px;
         }
 
         .card-header-custom {
@@ -411,7 +436,6 @@ foreach ($hydrants as $row) {
                 opacity: 0;
                 transform: translateY(-10px);
             }
-
             to {
                 opacity: 1;
                 transform: translateY(0);
@@ -442,7 +466,6 @@ foreach ($hydrants as $row) {
             from {
                 opacity: 0;
             }
-
             to {
                 opacity: 1;
             }
@@ -463,7 +486,6 @@ foreach ($hydrants as $row) {
                 opacity: 0;
                 transform: scale(0.95) translateY(-30px);
             }
-
             to {
                 opacity: 1;
                 transform: scale(1) translateY(0);
@@ -703,6 +725,10 @@ foreach ($hydrants as $row) {
                 gap: 12px;
                 align-items: flex-start;
             }
+
+            .map-osm-container {
+                height: 250px;
+            }
         }
     </style>
 </head>
@@ -747,7 +773,7 @@ foreach ($hydrants as $row) {
         <div class="row g-4 mb-4">
             <div class="col-md-3 col-6">
                 <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-fire-hydrant"></i></div>
+                    <div class="stat-icon"><i class="material-symbols-outlined">fire_hydrant</i></div>
                     <div class="stat-number"><?= $total_hydrant ?></div>
                     <div class="stat-label">Total Hydrant</div>
                 </div>
@@ -775,6 +801,23 @@ foreach ($hydrants as $row) {
             </div>
         </div>
 
+        <!-- ===== PETA OSM DI ATAS DAFTAR HYDRANT ===== -->
+        <div class="card-custom">
+            <div class="card-header-custom">
+                <h3><i class="fas fa-map-marked-alt"></i> Peta Lokasi Hydrant</h3>
+                <span class="badge-stats"><i class="fas fa-map-pin"></i> <?= count($coordinates) ?> Hydrant</span>
+            </div>
+            <div class="card-body" style="padding: 20px;">
+                <div class="map-osm-container">
+                    <div id="mapOSM"></div>
+                </div>
+                <div class="mt-2 text-muted">
+                    <small><i class="fas fa-info-circle"></i> Klik marker untuk melihat detail hydrant</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table Data -->
         <div class="card-custom">
             <div class="card-header-custom">
                 <h3><i class="fas fa-list"></i> Daftar Hydrant</h3>
@@ -999,6 +1042,7 @@ foreach ($hydrants as $row) {
     <script>
         // Data hydrant dari PHP
         const hydrantData = <?= json_encode($all_hydrant_data) ?>;
+        const coordinatesData = <?= json_encode($coordinates) ?>;
 
         // Initialize DataTable
         $('#dataTable').DataTable({
@@ -1010,7 +1054,67 @@ foreach ($hydrants as $row) {
             ]
         });
 
-        // Map variables
+        // ============================================================
+        // PETA OSM DI ATAS DAFTAR HYDRANT
+        // ============================================================
+        function initMapOSM() {
+            const mapOSM = L.map('mapOSM').setView([-3.468, 114.832], 12);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                maxZoom: 19
+            }).addTo(mapOSM);
+            
+            if (coordinatesData.length === 0) {
+                // Tampilkan pesan jika tidak ada data
+                mapOSM.setView([-3.468, 114.832], 12);
+                return;
+            }
+            
+            // Tambahkan marker untuk setiap hydrant
+            let hasMarker = false;
+            
+            coordinatesData.forEach(function(data) {
+                if (data.lat && data.lng && data.lat != 0 && data.lng != 0) {
+                    hasMarker = true;
+                    
+                    // Warna marker berdasarkan status
+                    const markerColor = data.status == 'berfungsi' ? '#28a745' : '#dc3545';
+                    const statusText = data.status == 'berfungsi' ? 'Berfungsi' : 'Rusak';
+                    
+                    const marker = L.marker([data.lat, data.lng], {
+                        icon: L.divIcon({
+                            className: 'custom-marker',
+                            html: `<div style="background: ${markerColor}; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">H</div>`,
+                            iconSize: [28, 28],
+                            iconAnchor: [14, 14]
+                        })
+                    }).addTo(mapOSM);
+                    
+                    marker.bindPopup(`
+                        <div style="font-family: 'Poppins', sans-serif; font-size: 13px;">
+                            <strong style="color: #F7B801;">Hydrant</strong><br>
+                            <span style="color: ${markerColor};">● ${statusText}</span><br>
+                            <small>${escapeHtml(data.alamat.substring(0, 80))}</small><br>
+                            ${escapeHtml(data.kecamatan || '')} - ${escapeHtml(data.kelurahan || '')}<br>
+                            <a href="#" onclick="bukaDetailModal(${data.id})" style="color: #F7B801; text-decoration: none;">
+                                <i class="fas fa-eye"></i> Lihat Detail
+                            </a>
+                        </div>
+                    `);
+                }
+            });
+            
+            if (hasMarker) {
+                // Fit bounds ke semua marker
+                const bounds = coordinatesData.map(d => [d.lat, d.lng]);
+                mapOSM.fitBounds(bounds, { padding: [50, 50] });
+            }
+        }
+
+        // ============================================================
+        // MAP DI MODAL
+        // ============================================================
         let map, marker;
         const defaultLat = -3.4422;
         const defaultLng = 114.8325;
@@ -1416,8 +1520,16 @@ foreach ($hydrants as $row) {
             document.getElementById('dropdownMenu').classList.remove('show');
         });
 
-        // Initialize map
-        initMap();
+        // Initialize maps
+        document.addEventListener('DOMContentLoaded', function() {
+            // Peta OSM di atas daftar
+            setTimeout(function() {
+                initMapOSM();
+            }, 300);
+            
+            // Peta di modal
+            initMap();
+        });
     </script>
 </body>
 

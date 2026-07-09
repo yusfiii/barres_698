@@ -40,6 +40,16 @@ try {
     $jumlah_individu = intval($_POST['jumlah_individu'] ?? 0);
     $korban_luka = intval($_POST['korban_luka'] ?? 0);
     $korban_jiwa = intval($_POST['korban_jiwa'] ?? 0);
+    $penyebab = $_POST['penyebab'] ?? '';
+    $penyebab_lainnya = trim($_POST['penyebab_lainnya'] ?? '');
+    $skala = $_POST['skala'] ?? '';
+    $keterangan = trim($_POST['keterangan'] ?? '');
+    $current_user_id = $_SESSION['user_id']; // Akun yang sedang login (penambah/pengedit)
+    
+    // Jika penyebab "Lainnya", gunakan nilai dari penyebab_lainnya
+    if ($penyebab === 'Lainnya' && !empty($penyebab_lainnya)) {
+        $penyebab = $penyebab_lainnya;
+    }
     
     // Validasi data wajib
     if (empty($waktu) || empty($alamat) || empty($kecamatan) || empty($kelurahan)) {
@@ -58,14 +68,14 @@ try {
             $latitude = $coords['lat'];
             $longitude = $coords['lng'];
         } else {
-            // Jika tidak ada koordinat, set ke default 0
+            // Jika tidak ada koordinat, set ke 0
             $latitude = 0;
             $longitude = 0;
         }
     }
     
     // Proses upload foto
-    $foto_name = isset($_POST['foto_lama']) ? $_POST['foto_lama'] : null;
+    $foto_name = isset($_POST['foto_lama']) && !empty($_POST['foto_lama']) ? $_POST['foto_lama'] : null;
     
     if (isset($_FILES['foto']) && $_FILES['foto']['error'] == 0) {
         $upload = uploadFile($_FILES['foto'], '../../uploads/');
@@ -78,7 +88,9 @@ try {
         }
     }
     
-    // Simpan data
+    // ============================================================
+    // SIMPAN DATA
+    // ============================================================
     if ($id > 0) {
         // EDIT: Update data
         $stmt = $conn->prepare("
@@ -94,11 +106,15 @@ try {
                 jumlah_individu = ?, 
                 korban_luka = ?, 
                 korban_jiwa = ?, 
-                foto = ? 
+                penyebab = ?, 
+                skala = ?, 
+                keterangan = ?, 
+                foto = ?,
+                diupdate_oleh = ?
             WHERE id = ?
         ");
         $stmt->bind_param(
-            "ssdsssiiiiisi",
+            "ssdsssiiiiissssii",
             $waktu,
             $latitude,
             $longitude,
@@ -110,21 +126,40 @@ try {
             $jumlah_individu,
             $korban_luka,
             $korban_jiwa,
+            $penyebab,
+            $skala,
+            $keterangan,
             $foto_name,
+            $current_user_id,
             $id
         );
         
-        $message = "Data kejadian berhasil diupdate!";
+        if ($stmt->execute()) {
+            // LOG AKTIVITAS - EDIT
+            logAktivitas('Mengedit data kejadian kebakaran ID: ' . $id, $_SESSION['user_id']);
+            echo json_encode([
+                'success' => true,
+                'message' => 'Data kejadian berhasil diupdate!'
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Gagal mengupdate data: ' . $stmt->error
+            ]);
+        }
+        $stmt->close();
+        
     } else {
         // TAMBAH: Insert data baru
         $stmt = $conn->prepare("
             INSERT INTO kejadian_kebakaran 
             (waktu, latitude, longitude, alamat, kecamatan, kelurahan, 
-             jumlah_bangunan, jumlah_KK, jumlah_individu, korban_luka, korban_jiwa, foto) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             jumlah_bangunan, jumlah_KK, jumlah_individu, korban_luka, korban_jiwa, 
+             penyebab, skala, keterangan, foto, dibuat_oleh) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->bind_param(
-            "ssdsssiiiiis",
+            "ssdsssiiiiissssi",
             $waktu,
             $latitude,
             $longitude,
@@ -136,25 +171,30 @@ try {
             $jumlah_individu,
             $korban_luka,
             $korban_jiwa,
-            $foto_name
+            $penyebab,
+            $skala,
+            $keterangan,
+            $foto_name,
+            $current_user_id
         );
         
-        $message = "Data kejadian berhasil ditambahkan!";
+        if ($stmt->execute()) {
+            $new_id = $conn->insert_id;
+            // LOG AKTIVITAS - TAMBAH
+            logAktivitas('Menambahkan data kejadian kebakaran ID: ' . $new_id, $_SESSION['user_id']);
+            echo json_encode([
+                'success' => true,
+                'message' => 'Data kejadian berhasil ditambahkan!'
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Gagal menambahkan data: ' . $stmt->error
+            ]);
+        }
+        $stmt->close();
     }
     
-    if ($stmt->execute()) {
-        echo json_encode([
-            'success' => true,
-            'message' => $message
-        ]);
-    } else {
-        echo json_encode([
-            'success' => false,
-            'message' => 'Gagal menyimpan data: ' . $stmt->error
-        ]);
-    }
-    
-    $stmt->close();
     $conn->close();
     
 } catch (Exception $e) {

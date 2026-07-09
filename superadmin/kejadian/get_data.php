@@ -37,8 +37,16 @@ if ($id <= 0) {
 try {
     $conn = getConnection();
     
-    // Ambil data kejadian
-    $stmt = $conn->prepare("SELECT * FROM kejadian_kebakaran WHERE id = ?");
+    // Ambil data kejadian beserta nama akun penambah & pengedit
+    $stmt = $conn->prepare("
+        SELECT k.*, 
+               u1.username AS dibuat_oleh_nama, 
+               u2.username AS diupdate_oleh_nama
+        FROM kejadian_kebakaran k
+        LEFT JOIN users u1 ON k.dibuat_oleh = u1.id
+        LEFT JOIN users u2 ON k.diupdate_oleh = u2.id
+        WHERE k.id = ?
+    ");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -59,7 +67,9 @@ try {
             'korban_luka' => $row['korban_luka'] ?? 0,
             'korban_jiwa' => $row['korban_jiwa'] ?? 0,
             'foto' => $row['foto'] ?? null,
-            'created_at' => $row['created_at'] ?? null
+            'created_at' => $row['created_at'] ?? null,
+            'dibuat_oleh' => $row['dibuat_oleh_nama'] ?? '-',
+            'diupdate_oleh' => $row['diupdate_oleh_nama'] ?? '-'
         ];
         
         echo json_encode([
