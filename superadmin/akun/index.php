@@ -10,6 +10,22 @@ $user = getCurrentUser();
 $message = '';
 $messageType = '';
 
+// ============================================================
+// FUNGSI PENCATATAN LOG AKTIVITAS (Sesuai Struktur Database)
+// ============================================================
+if (!function_exists('catatLog')) {
+    function catatLog($conn, $user, $aktivitas) {
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $nama = isset($user['nama']) ? $user['nama'] : $user['username'];
+        
+        $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssss", $user['id'], $user['username'], $user['role'], $nama, $aktivitas, $ip_address, $user_agent);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
 // Get total BPK untuk sidebar
 $conn = getConnection();
 $total_bpk = $conn->query("SELECT COUNT(*) as total FROM bpk")->fetch_assoc()['total'];
@@ -24,18 +40,28 @@ if (isset($_GET['delete'])) {
     
     // Cek jangan hapus sendiri
     if ($id == $_SESSION['user_id']) {
-        $message = "Anda tidak dapat menghapus akun sendiri!";
-        $messageType = "danger";
+        $message = "Anda tidak dapat menghapus akun Anda sendiri!";
+        $messageType = "error";
     } else {
         $conn = getConnection();
+        
+        // Ambil info username yang dihapus untuk Log
+        $stmt_info = $conn->prepare("SELECT username FROM users WHERE id = ?");
+        $stmt_info->bind_param("i", $id);
+        $stmt_info->execute();
+        $result_info = $stmt_info->get_result();
+        $deleted_user = $result_info->fetch_assoc();
+        $stmt_info->close();
+
         $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
         $stmt->bind_param("i", $id);
         if ($stmt->execute()) {
+            catatLog($conn, $user, "Menghapus akun pengguna: " . ($deleted_user['username'] ?? "ID $id"));
             $message = "Akun berhasil dihapus!";
             $messageType = "success";
         } else {
             $message = "Gagal menghapus akun!";
-            $messageType = "danger";
+            $messageType = "error";
         }
         $stmt->close();
         $conn->close();
@@ -67,6 +93,9 @@ $conn->close();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- SweetAlert2 CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -182,11 +211,6 @@ $conn->close();
         .badge-role-super { background: rgba(247,184,1,0.15); color: #B8860B; padding: 4px 12px; border-radius: 20px; font-size: 11px; display: inline-block; }
         .badge-role-bpk { background: rgba(23,162,184,0.1); color: #17a2b8; padding: 4px 12px; border-radius: 20px; font-size: 11px; display: inline-block; }
 
-        .alert-custom { border-radius: 14px; padding: 12px 18px; margin-bottom: 20px; animation: slideDown 0.3s ease; display: flex; align-items: center; gap: 12px; }
-        .alert-success { background: #d4edda; border-left: 4px solid #28a745; color: #155724; }
-        .alert-danger { background: #f8d7da; border-left: 4px solid #dc3545; color: #721c24; }
-        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-
         /* Modal */
         .modal-content { border-radius: 20px; overflow: hidden; border: none; }
         .modal-header { padding: 18px 24px; }
@@ -221,6 +245,10 @@ $conn->close();
             transition: all 0.2s;
         }
         .btn-outline-gold:hover { background: rgba(247,184,1,0.1); color: #F7B801; }
+
+        /* Custom SweetAlert */
+        .swal2-popup { font-family: 'Poppins', sans-serif !important; border-radius: 20px !important; }
+        .swal2-confirm, .swal2-cancel { border-radius: 12px !important; font-weight: 600 !important; }
 
         .dataTables_wrapper .dataTables_length select, .dataTables_wrapper .dataTables_filter input {
             background: #F8F8F8; border: 1px solid #E0E0E0; color: #1A1A1A; border-radius: 10px; padding: 6px 12px;
@@ -266,13 +294,6 @@ $conn->close();
                 <span>Logout</span>
             </a>
         </div>
-
-        <?php if ($message): ?>
-            <div class="alert-custom alert-<?= $messageType ?>">
-                <i class="fas <?= $messageType == 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle' ?>"></i>
-                <span><?= $message ?></span>
-            </div>
-        <?php endif; ?>
 
         <!-- Statistik -->
         <?php
@@ -353,7 +374,7 @@ $conn->close();
                                 <td>
                                     <button class="btn-action btn-edit" data-id="<?= $row['id'] ?>"><i class="fas fa-edit"></i></button>
                                     <?php if ($row['id'] != $_SESSION['user_id']): ?>
-                                        <a href="?delete=<?= $row['id'] ?>" class="btn-action danger" onclick="return confirm('Yakin hapus akun ini?')"><i class="fas fa-trash"></i></a>
+                                        <button type="button" class="btn-action danger" onclick="confirmDelete(<?= $row['id'] ?>)"><i class="fas fa-trash"></i></button>
                                     <?php else: ?>
                                         <button class="btn-action" disabled style="opacity:0.5;" title="Tidak bisa menghapus akun sendiri"><i class="fas fa-lock"></i></button>
                                     <?php endif; ?>
@@ -399,7 +420,7 @@ $conn->close();
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label required">Role</label>
-                                <select name="role" class="form-select" required onchange="toggleBpkField('tambah')">
+                                <select name="role" id="tambah_role" class="form-select" required onchange="toggleBpkField('tambah')">
                                     <option value="">Pilih Role</option>
                                     <option value="super_admin">Super Admin</option>
                                     <option value="admin_bpk">Admin BPK</option>
@@ -407,7 +428,7 @@ $conn->close();
                             </div>
                             <div class="col-md-6 mb-3" id="bpk_field_tambah" style="display:none;">
                                 <label class="form-label required">Pilih BPK</label>
-                                <select name="bpk_id" class="form-select">
+                                <select name="bpk_id" id="tambah_bpk_id" class="form-select">
                                     <option value="">Pilih BPK</option>
                                     <?php
                                     $conn = getConnection();
@@ -499,19 +520,53 @@ $conn->close();
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
+        // ============================================================
+        // ALERT PHP DARI SERVER
+        // ============================================================
+        <?php if ($message): ?>
+            Swal.fire({
+                icon: '<?= $messageType == "success" ? "success" : "error" ?>',
+                title: '<?= $messageType == "success" ? "Berhasil!" : "Gagal!" ?>',
+                text: '<?= $message ?>',
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }
+            });
+        <?php endif; ?>
+
         // DataTables
         $('#dataTable').DataTable({
-            language: {
-                url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json'
-            },
+            language: { url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json' },
             order: [[0, 'asc']]
         });
 
+        // ============================================================
+        // FUNGSI SWEETALERT UNTUK TOMBOL HAPUS
+        // ============================================================
+        function confirmDelete(id) {
+            Swal.fire({
+                title: 'Yakin hapus akun?',
+                text: "Akun yang dihapus tidak dapat dikembalikan!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Ya, Hapus!',
+                cancelButtonText: 'Batal',
+                reverseButtons: true,
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm', cancelButton: 'swal2-cancel' }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+                    window.location.href = '?delete=' + id;
+                }
+            });
+        }
+
         // Toggle BPK Field
         function toggleBpkField(type) {
-            const prefix = type == 'tambah' ? '' : 'edit_';
+            const prefix = type == 'tambah' ? 'tambah_' : 'edit_';
             const role = document.getElementById(prefix + 'role').value;
             const field = document.getElementById('bpk_field_' + type);
             if (role == 'admin_bpk') {
@@ -535,12 +590,17 @@ $conn->close();
         document.querySelectorAll('.btn-edit').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
+                
+                // Loader saat fetch data
+                Swal.fire({ title: 'Mengambil Data...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+                
                 $.ajax({
                     url: 'get_data.php',
                     type: 'GET',
                     data: { id: id },
                     dataType: 'json',
                     success: function(response) {
+                        Swal.close();
                         if (response.success) {
                             const d = response.data;
                             document.getElementById('edit_id').value = d.id;
@@ -564,17 +624,19 @@ $conn->close();
                             const modal = new bootstrap.Modal(document.getElementById('modalEdit'));
                             modal.show();
                         } else {
-                            alert('Gagal mengambil data: ' + response.message);
+                            Swal.fire({icon: 'error', title: 'Gagal', text: response.message, customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                         }
                     },
                     error: function() {
-                        alert('Terjadi kesalahan!');
+                        Swal.fire({icon: 'error', title: 'Error', text: 'Gagal menghubungi server.', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                     }
                 });
             });
         });
 
-        // Submit Tambah
+        // ============================================================
+        // SUBMIT TAMBAH (AJAX + SWEETALERT)
+        // ============================================================
         $('#formTambah').on('submit', function(e) {
             e.preventDefault();
             const formData = new FormData(this);
@@ -583,9 +645,11 @@ $conn->close();
             // Validasi password minimum 6
             const password = formData.get('password');
             if (password.length < 6) {
-                alert('Password minimal 6 karakter!');
+                Swal.fire({icon: 'warning', text: 'Password minimal 6 karakter!', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 return;
             }
+            
+            Swal.fire({ title: 'Menyimpan Data...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             
             $.ajax({
                 url: 'save_data.php',
@@ -596,18 +660,27 @@ $conn->close();
                 dataType: 'json',
                 success: function(response) {
                     if (response.success) {
-                        location.reload();
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Berhasil!',
+                            text: response.message,
+                            showConfirmButton: false,
+                            timer: 1500,
+                            customClass: {popup: 'swal2-popup'}
+                        }).then(() => location.reload());
                     } else {
-                        alert('Error: ' + response.message);
+                        Swal.fire({icon: 'error', title: 'Error', text: response.message, customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                     }
                 },
                 error: function() {
-                    alert('Terjadi kesalahan!');
+                    Swal.fire({icon: 'error', title: 'Terjadi Kesalahan', text: 'Gagal menghubungi server.', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 }
             });
         });
 
-        // Submit Edit
+        // ============================================================
+        // SUBMIT EDIT (AJAX + SWEETALERT)
+        // ============================================================
         $('#formEdit').on('submit', function(e) {
             e.preventDefault();
             const formData = new FormData(this);
@@ -616,9 +689,11 @@ $conn->close();
             // Validasi password jika diisi
             const password = formData.get('password');
             if (password && password.length < 6) {
-                alert('Password minimal 6 karakter!');
+                Swal.fire({icon: 'warning', text: 'Password minimal 6 karakter!', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 return;
             }
+            
+            Swal.fire({ title: 'Mengupdate Data...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             
             $.ajax({
                 url: 'save_data.php',
@@ -629,13 +704,20 @@ $conn->close();
                 dataType: 'json',
                 success: function(response) {
                     if (response.success) {
-                        location.reload();
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Berhasil!',
+                            text: response.message,
+                            showConfirmButton: false,
+                            timer: 1500,
+                            customClass: {popup: 'swal2-popup'}
+                        }).then(() => location.reload());
                     } else {
-                        alert('Error: ' + response.message);
+                        Swal.fire({icon: 'error', title: 'Error', text: response.message, customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                     }
                 },
                 error: function() {
-                    alert('Terjadi kesalahan!');
+                    Swal.fire({icon: 'error', title: 'Terjadi Kesalahan', text: 'Gagal menghubungi server.', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 }
             });
         });

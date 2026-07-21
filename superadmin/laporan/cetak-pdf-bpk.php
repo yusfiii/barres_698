@@ -3,13 +3,6 @@
  * cetak-pdf-bpk.php
  * Generate Laporan Data BPK (semua BPK Sekota Banjarbaru yang terdaftar)
  * dalam format PDF (DomPDF), memakai includes/pdf-helper.php.
- *
- * Ini adalah CONTOH POLA untuk laporan bertipe "daftar/list" (multi-baris),
- * berbeda dengan cetak-pdf-kejadian.php yang bertipe "detail satu record".
- * Laporan-laporan lain (Anggota, Hotspot, dst) bisa mengikuti pola file ini:
- *   1. Ambil data dari database
- *   2. Susun isi_html (di sini pakai class="data-table" dari helper)
- *   3. Panggil pdfRender([...])
  */
 
 require_once __DIR__ . '/../../includes/config.php';
@@ -22,7 +15,7 @@ checkRole(['super_admin']);
 
 $conn = getConnection();
 
-// Opsional: filter kecamatan via query string, contoh: cetak-pdf-bpk.php?kecamatan=Banjarbaru%20Selatan
+// Opsional: filter kecamatan via query string
 $filter_kecamatan = isset($_GET['kecamatan']) ? $_GET['kecamatan'] : '';
 
 $query = "SELECT * FROM bpk WHERE 1=1";
@@ -47,29 +40,6 @@ $daftar_bpk = $result->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 $conn->close();
 
-/**
- * Helper khusus laporan ini: ringkas data JSON fasilitas jadi teks singkat.
- * Format kolom di DB: {"jumlah":2,"keterangan":"Baik","foto":null} atau NULL.
- */
-function ringkasFasilitas($json_string)
-{
-    if (empty($json_string)) {
-        return '-';
-    }
-
-    $data = json_decode($json_string, true);
-    if (!is_array($data) || empty($data['jumlah'])) {
-        return '-';
-    }
-
-    $teks = $data['jumlah'] . ' unit';
-    if (!empty($data['keterangan'])) {
-        $teks .= ' (' . $data['keterangan'] . ')';
-    }
-
-    return $teks;
-}
-
 // ====================== SUSUN ISI LAPORAN (KHUSUS BPK) ======================
 
 ob_start();
@@ -77,14 +47,13 @@ ob_start();
 <table class="data-table">
     <thead>
         <tr>
-            <th style="width: 6%;">No</th>
-            <th style="width: 12%;">No. Registrasi</th>
-            <th style="width: 22%;">Nama BPK/PMK</th>
-            <th style="width: 16%;">Kecamatan</th>
-            <th style="width: 14%;">Kelurahan</th>
-            <th class="center" style="width: 8%;">Tahun Berdiri</th>
-            <th class="center" style="width: 8%;">Anggota</th>
-            <th style="width: 14%;">Fasilitas Pemadam Portable</th>
+            <th style="width: 5%;">No</th>
+            <th style="width: 10%;">No. Reg</th>
+            <th style="width: 20%;">Nama BPK/PMK</th>
+            <th style="width: 18%;">Kecamatan & Kelurahan</th>
+            <th style="width: 22%;">Alamat</th>
+            <th style="width: 15%;">Titik Koordinat Posko</th>
+            <th class="center" style="width: 10%;">Jumlah Anggota</th>
         </tr>
     </thead>
     <tbody>
@@ -94,16 +63,15 @@ ob_start();
                     <td class="center"><?= $i + 1 ?></td>
                     <td><?= htmlspecialchars($bpk['nomor_registrasi'] ?? '-') ?></td>
                     <td><?= htmlspecialchars($bpk['nama_bpk'] ?? '-') ?></td>
-                    <td><?= htmlspecialchars($bpk['kecamatan'] ?? '-') ?></td>
-                    <td><?= htmlspecialchars($bpk['kelurahan'] ?? '-') ?></td>
-                    <td class="center"><?= htmlspecialchars($bpk['tahun_berdiri'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars($bpk['kecamatan'] ?? '-') ?> / <?= htmlspecialchars($bpk['kelurahan'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars($bpk['alamat'] ?? '-') ?></td>
+                    <td><?= htmlspecialchars($bpk['latitude'] ?? '-') ?>,<br><?= htmlspecialchars($bpk['longitude'] ?? '-') ?></td>
                     <td class="center"><?= (int) ($bpk['jumlah_anggota'] ?? 0) ?></td>
-                    <td><?= htmlspecialchars(ringkasFasilitas($bpk['fasilitas_pemadam_portable'] ?? null)) ?></td>
                 </tr>
             <?php endforeach; ?>
         <?php else: ?>
             <tr>
-                <td colspan="8" class="center">Tidak ada data BPK terdaftar.</td>
+                <td colspan="7" class="center">Tidak ada data BPK terdaftar.</td>
             </tr>
         <?php endif; ?>
     </tbody>

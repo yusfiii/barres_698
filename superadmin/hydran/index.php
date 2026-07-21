@@ -10,6 +10,22 @@ $user = getCurrentUser();
 $message = '';
 $messageType = '';
 
+// ============================================================
+// FUNGSI PENCATATAN LOG AKTIVITAS (Sesuai Struktur Database)
+// ============================================================
+if (!function_exists('catatLog')) {
+    function catatLog($conn, $user, $aktivitas) {
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $nama = isset($user['nama']) ? $user['nama'] : $user['username'];
+        
+        $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssss", $user['id'], $user['username'], $user['role'], $nama, $aktivitas, $ip_address, $user_agent);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
 // Get total BPK untuk sidebar
 $conn = getConnection();
 $total_bpk = $conn->query("SELECT COUNT(*) as total FROM bpk")->fetch_assoc()['total'];
@@ -18,7 +34,9 @@ $conn->close();
 // Include sidebar dari folder includes
 include __DIR__ . '/../../includes/sidebar.php';
 
-// Handle delete
+// ============================================================
+// HANDLE DELETE
+// ============================================================
 if (isset($_GET['delete'])) {
     $id = intval($_GET['delete']);
     $conn = getConnection();
@@ -39,11 +57,12 @@ if (isset($_GET['delete'])) {
     $stmt = $conn->prepare("DELETE FROM hydrant WHERE id = ?");
     $stmt->bind_param("i", $id);
     if ($stmt->execute()) {
+        catatLog($conn, $user, "Menghapus data hydrant ID: " . $id);
         $message = "Data hydrant berhasil dihapus!";
         $messageType = "success";
     } else {
         $message = "Gagal menghapus data!";
-        $messageType = "danger";
+        $messageType = "error";
     }
     $stmt->close();
     $conn->close();
@@ -94,650 +113,126 @@ foreach ($hydrants as $row) {
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" />
-    <!-- Leaflet CSS -->
+    
+    <!-- SweetAlert2 CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+
+    <!-- Leaflet & MarkerCluster CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
 
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Poppins', sans-serif; background: #D1D5DB; background: linear-gradient(135deg, #E5E7EB 0%, #D1D5DB 100%); min-height: 100vh; }
+        .main-content { margin-left: 280px; padding: 24px 32px; min-height: 100vh; }
 
-        body {
-            font-family: 'Poppins', sans-serif;
-            background: #D1D5DB;
-            background: linear-gradient(135deg, #E5E7EB 0%, #D1D5DB 100%);
-            min-height: 100vh;
-        }
+        .top-navbar { background: #FFFFFF; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 20px; padding: 12px 24px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: center; }
+        .page-title h2 { font-size: 20px; font-weight: 600; margin: 0; color: #1A1A1A; }
+        .page-title p { font-size: 13px; margin: 4px 0 0 0; color: #666; }
+        .user-info { text-align: right; }
+        .user-info .username { font-size: 14px; font-weight: 600; color: #1A1A1A; }
+        .user-info .role { font-size: 11px; color: #F7B801; }
+        .user-avatar { width: 44px; height: 44px; background: linear-gradient(135deg, #F7B801, #E5A800); border-radius: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s; }
+        .user-avatar:hover { transform: scale(1.05); }
+        .user-avatar i { font-size: 22px; color: #1A1A1A; }
 
-        .main-content {
-            margin-left: 280px;
-            padding: 24px 32px;
-            min-height: 100vh;
-        }
+        .dropdown-menu-custom { position: absolute; top: 80px; right: 32px; background: #FFFFFF; border: 1px solid rgba(0, 0, 0, 0.1); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); border-radius: 16px; padding: 12px 0; min-width: 180px; display: none; z-index: 1000; }
+        .dropdown-menu-custom.show { display: block; animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .dropdown-menu-custom a { display: flex; align-items: center; gap: 12px; padding: 12px 20px; text-decoration: none; transition: all 0.2s; font-size: 13px; color: #333; }
+        .dropdown-menu-custom a:hover { background: rgba(247, 184, 1, 0.1); color: #F7B801; }
+        .dropdown-divider { margin: 8px 0; border-color: #E0E0E0; }
 
-        /* Top Navbar */
-        .top-navbar {
-            background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            border-radius: 20px;
-            padding: 12px 24px;
-            margin-bottom: 28px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+        .stat-card { background: #FFFFFF; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 20px; padding: 20px; transition: all 0.3s ease; text-align: center; }
+        .stat-card:hover { transform: translateY(-4px); border-color: #F7B801; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06); }
+        .stat-icon { width: 55px; height: 55px; background: rgba(247, 184, 1, 0.1); border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+        .stat-icon i { font-size: 28px; color: #F7B801; }
+        .stat-number { font-size: 32px; font-weight: 700; margin-bottom: 5px; color: #1A1A1A; }
+        .stat-label { font-size: 13px; font-weight: 500; color: #666; }
 
-        .page-title h2 {
-            font-size: 20px;
-            font-weight: 600;
-            margin: 0;
-            color: #1A1A1A;
-        }
+        .map-osm-container { height: 400px; border-radius: 16px; overflow: hidden; border: 1px solid rgba(0, 0, 0, 0.1); }
+        #mapOSM { height: 100%; width: 100%; }
 
-        .page-title p {
-            font-size: 13px;
-            margin: 4px 0 0 0;
-            color: #666;
-        }
+        .btn-tambah { background: linear-gradient(135deg, #F7B801, #E5A800); border: none; padding: 10px 20px; border-radius: 12px; font-weight: 600; font-size: 13px; color: #1A1A1A; transition: all 0.3s ease; display: flex; align-items: center; gap: 8px; }
+        .btn-tambah:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(247, 184, 1, 0.3); }
 
-        .user-info {
-            text-align: right;
-        }
+        .card-custom { background: #FFFFFF; border: 1px solid rgba(0, 0, 0, 0.08); border-radius: 20px; overflow: hidden; margin-bottom: 28px; }
+        .card-header-custom { padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; background: #FFFFFF; border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
+        .card-header-custom h3 { font-size: 16px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 10px; color: #F7B801; }
+        .badge-stats { background: rgba(247, 184, 1, 0.1); padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; color: #F7B801; }
 
-        .user-info .username {
-            font-size: 14px;
-            font-weight: 600;
-            color: #1A1A1A;
-        }
+        .table-custom { width: 100%; margin-bottom: 0; color: #1A1A1A; }
+        .table-custom thead th { padding: 14px 16px; font-size: 13px; font-weight: 600; background: #F8F8F8; color: #1A1A1A; border-bottom: 1px solid #E0E0E0; }
+        .table-custom tbody td { padding: 12px 16px; font-size: 13px; vertical-align: middle; border-bottom: 1px solid #E0E0E0; }
+        .table-custom tbody tr:hover { background: rgba(247, 184, 1, 0.03); }
 
-        .user-info .role {
-            font-size: 11px;
-            color: #F7B801;
-        }
+        .foto-thumb { width: 50px; height: 50px; object-fit: cover; border-radius: 10px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; }
+        .btn-action { background: transparent; border: none; padding: 6px 10px; border-radius: 10px; cursor: pointer; transition: all 0.2s; }
+        .btn-action i { font-size: 14px; color: #999; }
+        .btn-action:hover i { color: #F7B801; }
+        .btn-action.danger:hover i { color: #dc3545; }
 
-        .user-avatar {
-            width: 44px;
-            height: 44px;
-            background: linear-gradient(135deg, #F7B801, #E5A800);
-            border-radius: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-
-        .user-avatar:hover {
-            transform: scale(1.05);
-        }
-
-        .user-avatar i {
-            font-size: 22px;
-            color: #1A1A1A;
-        }
-
-        .dropdown-menu-custom {
-            position: absolute;
-            top: 80px;
-            right: 32px;
-            background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            border-radius: 16px;
-            padding: 12px 0;
-            min-width: 180px;
-            display: none;
-            z-index: 1000;
-        }
-
-        .dropdown-menu-custom.show {
-            display: block;
-            animation: fadeIn 0.2s ease;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .dropdown-menu-custom a {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 20px;
-            text-decoration: none;
-            transition: all 0.2s;
-            font-size: 13px;
-            color: #333;
-        }
-
-        .dropdown-menu-custom a:hover {
-            background: rgba(247, 184, 1, 0.1);
-            color: #F7B801;
-        }
-
-        .dropdown-divider {
-            margin: 8px 0;
-            border-color: #E0E0E0;
-        }
-
-        /* Stats Cards */
-        .stat-card {
-            background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            border-radius: 20px;
-            padding: 20px;
-            transition: all 0.3s ease;
-            text-align: center;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-4px);
-            border-color: #F7B801;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
-        }
-
-        .stat-icon {
-            width: 55px;
-            height: 55px;
-            background: rgba(247, 184, 1, 0.1);
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 12px;
-        }
-
-        .stat-icon i {
-            font-size: 28px;
-            color: #F7B801;
-        }
-
-        .stat-number {
-            font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 5px;
-            color: #1A1A1A;
-        }
-
-        .stat-label {
-            font-size: 13px;
-            font-weight: 500;
-            color: #666;
-        }
-
-        /* Peta OSM di atas daftar */
-        .map-osm-container {
-            height: 400px;
-            border-radius: 16px;
-            overflow: hidden;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-        }
-        #mapOSM {
-            height: 100%;
-            width: 100%;
-        }
-
-        .btn-tambah {
-            background: linear-gradient(135deg, #F7B801, #E5A800);
-            border: none;
-            padding: 10px 20px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 13px;
-            color: #1A1A1A;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn-tambah:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(247, 184, 1, 0.3);
-        }
-
-        .card-custom {
-            background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            border-radius: 20px;
-            overflow: hidden;
-            margin-bottom: 28px;
-        }
-
-        .card-header-custom {
-            padding: 18px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #FFFFFF;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-        }
-
-        .card-header-custom h3 {
-            font-size: 16px;
-            font-weight: 600;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: #F7B801;
-        }
-
-        .table-custom {
-            width: 100%;
-            margin-bottom: 0;
-            color: #1A1A1A;
-        }
-
-        .table-custom thead th {
-            padding: 14px 16px;
-            font-size: 13px;
-            font-weight: 600;
-            background: #F8F8F8;
-            color: #1A1A1A;
-            border-bottom: 1px solid #E0E0E0;
-        }
-
-        .table-custom tbody td {
-            padding: 12px 16px;
-            font-size: 13px;
-            vertical-align: middle;
-            border-bottom: 1px solid #E0E0E0;
-        }
-
-        .table-custom tbody tr:hover {
-            background: rgba(247, 184, 1, 0.03);
-        }
-
-        .foto-thumb {
-            width: 50px;
-            height: 50px;
-            object-fit: cover;
-            border-radius: 10px;
-            background: #F5F5F5;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .btn-action {
-            background: transparent;
-            border: none;
-            padding: 6px 10px;
-            border-radius: 10px;
-            cursor: pointer;
-        }
-
-        .btn-action i {
-            font-size: 14px;
-            color: #999;
-        }
-
-        .btn-action:hover i {
-            color: #F7B801;
-        }
-
-        .btn-action.danger:hover i {
-            color: #dc3545;
-        }
-
-        .badge-berfungsi {
-            background: rgba(40, 167, 69, 0.1);
-            color: #1e7e34;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 11px;
-            display: inline-block;
-        }
-
-        .badge-rusak {
-            background: rgba(220, 53, 69, 0.1);
-            color: #dc3545;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 11px;
-            display: inline-block;
-        }
-
-        /* Alert */
-        .alert-custom {
-            border-radius: 14px;
-            padding: 12px 18px;
-            margin-bottom: 20px;
-            animation: slideDown 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            border-left: 4px solid #28a745;
-            color: #155724;
-        }
-
-        .alert-danger {
-            background: #f8d7da;
-            border-left: 4px solid #dc3545;
-            color: #721c24;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
+        .badge-berfungsi { background: rgba(40, 167, 69, 0.1); color: #1e7e34; padding: 4px 12px; border-radius: 20px; font-size: 11px; display: inline-block; }
+        .badge-rusak { background: rgba(220, 53, 69, 0.1); color: #dc3545; padding: 4px 12px; border-radius: 20px; font-size: 11px; display: inline-block; }
 
         /* Modal Floating */
-        .modal-floating {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.85);
-            backdrop-filter: blur(8px);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-        }
+        .modal-floating { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); z-index: 2000; align-items: center; justify-content: center; }
+        .modal-floating.show { display: flex; animation: modalFadeIn 0.3s ease; }
+        @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .modal-floating-content { background: #FFFFFF; border-radius: 28px; width: 95%; max-width: 1200px; max-height: 90vh; overflow-y: auto; animation: modalFlyIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes modalFlyIn { from { opacity: 0; transform: scale(0.95) translateY(-30px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .modal-floating-header { padding: 20px 28px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; background: #FFFFFF; border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
+        .modal-floating-header h4 { font-size: 20px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 10px; color: #F7B801; }
+        .close-modal { background: transparent; border: none; width: 36px; height: 36px; border-radius: 12px; cursor: pointer; transition: all 0.2s; color: #666; }
+        .close-modal:hover { background: rgba(247, 184, 1, 0.1); color: #F7B801; }
+        .modal-floating-body { padding: 28px; position: relative; }
 
-        .modal-floating.show {
-            display: flex;
-            animation: modalFadeIn 0.3s ease;
-        }
+        .form-group { margin-bottom: 20px; }
+        .form-label { font-size: 13px; font-weight: 600; margin-bottom: 8px; display: block; color: #1A1A1A; }
+        .form-label .required { color: #F7B801; }
+        .form-control, .form-select { background: #F8F8F8; border: 1px solid #E0E0E0; color: #1A1A1A; border-radius: 12px; padding: 10px 14px; font-size: 13px; font-family: 'Poppins', sans-serif; }
+        .form-control:focus, .form-select:focus { border-color: #F7B801; box-shadow: 0 0 0 3px rgba(247, 184, 1, 0.1); outline: none; }
 
-        @keyframes modalFadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
-        }
+        .map-container { height: 400px; border-radius: 16px; overflow: hidden; margin-bottom: 20px; }
+        #map { height: 100%; width: 100%; }
 
-        .modal-floating-content {
-            background: #FFFFFF;
-            border-radius: 28px;
-            width: 95%;
-            max-width: 1200px;
-            max-height: 90vh;
-            overflow-y: auto;
-            animation: modalFlyIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
+        .coordinate-info { background: #F8F9FA; border-radius: 14px; padding: 15px; margin-bottom: 20px; }
+        .coordinate-info p { margin: 0 0 10px 0; font-size: 13px; font-weight: 600; color: #F7B801; }
+        .coordinate-input-group { display: flex; gap: 15px; margin-bottom: 15px; }
+        .coordinate-input-group .form-control { flex: 1; }
+        .btn-location { background: rgba(247, 184, 1, 0.1); border: 1px solid rgba(247, 184, 1, 0.3); padding: 10px 16px; border-radius: 14px; font-size: 13px; transition: all 0.2s; cursor: pointer; color: #F7B801; }
+        .btn-location:hover { background: #F7B801; color: #1A1A1A; }
 
-        @keyframes modalFlyIn {
-            from {
-                opacity: 0;
-                transform: scale(0.95) translateY(-30px);
-            }
-            to {
-                opacity: 1;
-                transform: scale(1) translateY(0);
-            }
-        }
+        .btn-submit { background: linear-gradient(135deg, #F7B801, #E5A800); border: none; padding: 12px 24px; border-radius: 14px; font-weight: 600; transition: all 0.2s; color: #1A1A1A; }
+        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(247, 184, 1, 0.3); }
+        .btn-cancel { background: transparent; padding: 12px 24px; border-radius: 14px; font-weight: 600; transition: all 0.2s; color: #666; border: 1px solid #ccc; }
+        .btn-cancel:hover { background: rgba(0, 0, 0, 0.05); }
+        .image-preview { width: 100px; height: 100px; object-fit: cover; border-radius: 12px; margin-top: 10px; }
+        .info-text { font-size: 12px; margin-top: 5px; color: #666; }
 
-        .modal-floating-header {
-            padding: 20px 28px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            background: #FFFFFF;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-        }
-
-        .modal-floating-header h4 {
-            font-size: 20px;
-            font-weight: 600;
-            margin: 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: #F7B801;
-        }
-
-        .close-modal {
-            background: transparent;
-            border: none;
-            width: 36px;
-            height: 36px;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.2s;
-            color: #666;
-        }
-
-        .close-modal:hover {
-            background: rgba(247, 184, 1, 0.1);
-            color: #F7B801;
-        }
-
-        .modal-floating-body {
-            padding: 28px;
-            position: relative;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-label {
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            display: block;
-            color: #1A1A1A;
-        }
-
-        .form-label .required {
-            color: #F7B801;
-        }
-
-        .form-control,
-        .form-select {
-            background: #F8F8F8;
-            border: 1px solid #E0E0E0;
-            color: #1A1A1A;
-            border-radius: 12px;
-            padding: 10px 14px;
-            font-size: 13px;
-            font-family: 'Poppins', sans-serif;
-        }
-
-        .form-control:focus,
-        .form-select:focus {
-            border-color: #F7B801;
-            box-shadow: 0 0 0 3px rgba(247, 184, 1, 0.1);
-            outline: none;
-        }
-
-        .map-container {
-            height: 400px;
-            border-radius: 16px;
-            overflow: hidden;
-            margin-bottom: 20px;
-        }
-
-        #map {
-            height: 100%;
-            width: 100%;
-        }
-
-        .coordinate-info {
-            background: #F8F9FA;
-            border-radius: 14px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-
-        .coordinate-info p {
-            margin: 0 0 10px 0;
-            font-size: 13px;
-            font-weight: 600;
-            color: #F7B801;
-        }
-
-        .coordinate-input-group {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        .coordinate-input-group .form-control {
-            flex: 1;
-        }
-
-        .btn-location {
-            background: rgba(247, 184, 1, 0.1);
-            border: 1px solid rgba(247, 184, 1, 0.3);
-            padding: 10px 16px;
-            border-radius: 14px;
-            font-size: 13px;
-            transition: all 0.2s;
-            cursor: pointer;
-            color: #F7B801;
-        }
-
-        .btn-location:hover {
-            background: #F7B801;
-            color: #1A1A1A;
-        }
-
-        .btn-submit {
-            background: linear-gradient(135deg, #F7B801, #E5A800);
-            border: none;
-            padding: 12px 24px;
-            border-radius: 14px;
-            font-weight: 600;
-            transition: all 0.2s;
-            color: #1A1A1A;
-        }
-
-        .btn-submit:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(247, 184, 1, 0.3);
-        }
-
-        .btn-cancel {
-            background: transparent;
-            padding: 12px 24px;
-            border-radius: 14px;
-            font-weight: 600;
-            transition: all 0.2s;
-            color: #666;
-            border: 1px solid #ccc;
-        }
-
-        .btn-cancel:hover {
-            background: rgba(0, 0, 0, 0.05);
-        }
-
-        .image-preview {
-            width: 100px;
-            height: 100px;
-            object-fit: cover;
-            border-radius: 12px;
-            margin-top: 10px;
-        }
-
-        .loading-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            border-radius: 28px;
-            z-index: 20;
-        }
-
-        .loading-overlay.show {
-            display: flex;
-        }
-
-        .info-text {
-            font-size: 12px;
-            margin-top: 5px;
-            color: #666;
-        }
+        /* Custom SweetAlert */
+        .swal2-popup { font-family: 'Poppins', sans-serif !important; border-radius: 20px !important; }
+        .swal2-confirm, .swal2-cancel { border-radius: 12px !important; font-weight: 600 !important; }
+        .swal2-timer-progress-bar { background: #F7B801 !important; }
 
         /* DataTables overrides */
-        .dataTables_wrapper .dataTables_length select,
-        .dataTables_wrapper .dataTables_filter input {
-            background: #F8F8F8;
-            border: 1px solid #E0E0E0;
-            color: #1A1A1A;
-            border-radius: 10px;
-            padding: 6px 12px;
-        }
+        .dataTables_wrapper .dataTables_length select, .dataTables_wrapper .dataTables_filter input { background: #F8F8F8; border: 1px solid #E0E0E0; color: #1A1A1A; border-radius: 10px; padding: 6px 12px; }
+        .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #666; }
+        .dataTables_wrapper .dataTables_paginate .paginate_button { background: #F8F8F8 !important; border-color: #E0E0E0 !important; color: #1A1A1A !important; }
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current { background: #F7B801 !important; color: #1A1A1A !important; }
 
-        .dataTables_wrapper .dataTables_info,
-        .dataTables_wrapper .dataTables_paginate {
-            color: #666;
-        }
-
-        .dataTables_wrapper .dataTables_paginate .paginate_button {
-            background: #F8F8F8 !important;
-            border-color: #E0E0E0 !important;
-            color: #1A1A1A !important;
-        }
-
-        .dataTables_wrapper .dataTables_paginate .paginate_button.current {
-            background: #F7B801 !important;
-            color: #1A1A1A !important;
-        }
-
-        /* Responsive */
         @media (max-width: 768px) {
-            .main-content {
-                margin-left: 0;
-                padding: 16px;
-            }
-
-            .coordinate-input-group {
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            .card-header-custom {
-                flex-direction: column;
-                gap: 12px;
-                align-items: flex-start;
-            }
-
-            .map-osm-container {
-                height: 250px;
-            }
+            .main-content { margin-left: 0; padding: 16px; }
+            .coordinate-input-group { flex-direction: column; gap: 10px; }
+            .card-header-custom { flex-direction: column; gap: 12px; align-items: flex-start; }
+            .map-osm-container { height: 250px; }
         }
     </style>
 </head>
 
 <body>
 
-    <!-- Sidebar sudah di-include dari includes/sidebar.php -->
-
-    <!-- Main Content -->
     <div class="main-content">
         <div class="top-navbar">
             <div class="page-title">
@@ -761,13 +256,6 @@ foreach ($hydrants as $row) {
                 <span>Logout</span>
             </a>
         </div>
-
-        <?php if ($message): ?>
-            <div class="alert-custom alert-<?= $messageType ?>">
-                <i class="fas <?= $messageType == 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle' ?>"></i>
-                <span><?= $message ?></span>
-            </div>
-        <?php endif; ?>
 
         <!-- Stats Cards -->
         <div class="row g-4 mb-4">
@@ -869,7 +357,7 @@ foreach ($hydrants as $row) {
                                 <td>
                                     <button class="btn-action btn-detail" data-id="<?= $row['id'] ?>"><i class="fas fa-eye"></i></button>
                                     <button class="btn-action btn-edit" data-id="<?= $row['id'] ?>"><i class="fas fa-edit"></i></button>
-                                    <a href="?delete=<?= $row['id'] ?>" class="btn-action danger" onclick="return confirm('Yakin hapus data ini?')"><i class="fas fa-trash"></i></a>
+                                    <button type="button" class="btn-action danger" onclick="confirmDelete(<?= $row['id'] ?>)"><i class="fas fa-trash"></i></button>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -887,9 +375,6 @@ foreach ($hydrants as $row) {
                 <button class="close-modal" id="closeModal"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-floating-body" style="position: relative;">
-                <div class="loading-overlay" id="loadingOverlay">
-                    <div class="spinner-border text-warning"></div>
-                </div>
                 <form id="hydrantForm" enctype="multipart/form-data">
                     <input type="hidden" name="id" id="editId">
 
@@ -1037,9 +522,47 @@ foreach ($hydrants as $row) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
     <script>
+        // ============================================================
+        // ALERT PHP DARI SERVER
+        // ============================================================
+        <?php if ($message): ?>
+            Swal.fire({
+                icon: '<?= $messageType == "success" ? "success" : "error" ?>',
+                title: '<?= $messageType == "success" ? "Berhasil!" : "Gagal!" ?>',
+                text: '<?= $message ?>',
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }
+            });
+        <?php endif; ?>
+
+        // ============================================================
+        // FUNGSI SWEETALERT UNTUK TOMBOL AKSI
+        // ============================================================
+        function confirmDelete(id) {
+            Swal.fire({
+                title: 'Yakin hapus data?',
+                text: "Data yang dihapus tidak dapat dikembalikan!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Ya, Hapus!',
+                cancelButtonText: 'Batal',
+                reverseButtons: true,
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm', cancelButton: 'swal2-cancel' }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+                    window.location.href = '?delete=' + id;
+                }
+            });
+        }
+
         // Data hydrant dari PHP
         const hydrantData = <?= json_encode($all_hydrant_data) ?>;
         const coordinatesData = <?= json_encode($coordinates) ?>;
@@ -1055,7 +578,7 @@ foreach ($hydrants as $row) {
         });
 
         // ============================================================
-        // PETA OSM DI ATAS DAFTAR HYDRANT
+        // PETA OSM DI ATAS DAFTAR HYDRANT (DENGAN MARKER CLUSTER)
         // ============================================================
         function initMapOSM() {
             const mapOSM = L.map('mapOSM').setView([-3.468, 114.832], 12);
@@ -1066,12 +589,25 @@ foreach ($hydrants as $row) {
             }).addTo(mapOSM);
             
             if (coordinatesData.length === 0) {
-                // Tampilkan pesan jika tidak ada data
                 mapOSM.setView([-3.468, 114.832], 12);
                 return;
             }
             
-            // Tambahkan marker untuk setiap hydrant
+            // Inisialisasi Marker Cluster Group
+            const markersCluster = L.markerClusterGroup({
+                maxClusterRadius: 50,
+                iconCreateFunction: function(cluster) {
+                    const count = cluster.getChildCount();
+                    const size = count < 10 ? 40 : (count < 50 ? 50 : 60);
+                    return L.divIcon({
+                        html: `<div style="background:rgba(247,184,1,0.9);border-radius:50%;width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:${size < 50 ? 14 : 12}px;color:#0D0D0D;border:2px solid #F7B801;box-shadow:0 4px 15px rgba(247,184,1,0.3);">${count}</div>`,
+                        className: '',
+                        iconSize: [size, size],
+                        iconAnchor: [size/2, size/2]
+                    });
+                }
+            });
+            
             let hasMarker = false;
             
             coordinatesData.forEach(function(data) {
@@ -1089,7 +625,7 @@ foreach ($hydrants as $row) {
                             iconSize: [28, 28],
                             iconAnchor: [14, 14]
                         })
-                    }).addTo(mapOSM);
+                    });
                     
                     marker.bindPopup(`
                         <div style="font-family: 'Poppins', sans-serif; font-size: 13px;">
@@ -1102,8 +638,14 @@ foreach ($hydrants as $row) {
                             </a>
                         </div>
                     `);
+                    
+                    // Tambahkan marker ke dalam cluster
+                    markersCluster.addLayer(marker);
                 }
             });
+            
+            // Tambahkan cluster group ke map
+            mapOSM.addLayer(markersCluster);
             
             if (hasMarker) {
                 // Fit bounds ke semua marker
@@ -1130,30 +672,17 @@ foreach ($hydrants as $row) {
         ];
 
         const kelurahanToKecamatan = {
-            'Landasan Ulin Timur': 'Landasan Ulin',
-            'Landasan Ulin Barat': 'Landasan Ulin',
-            'Landasan Ulin Utara': 'Landasan Ulin',
-            'Syamsudin Noor': 'Landasan Ulin',
-            'Guntung Payung': 'Landasan Ulin',
-            'Guntung Manggis': 'Landasan Ulin',
-            'Cempaka': 'Cempaka',
-            'Bangkal': 'Cempaka',
-            'Palam': 'Cempaka',
-            'Sungai Tiung': 'Cempaka',
-            'Cempaka Baru': 'Cempaka',
-            'Loktabat Utara': 'Banjarbaru Utara',
-            'Loktabat Selatan': 'Banjarbaru Utara',
-            'Mentaos': 'Banjarbaru Utara',
-            'Sungai Ulin': 'Banjarbaru Utara',
-            'Komet': 'Banjarbaru Utara',
-            'Guntung Paikat': 'Banjarbaru Selatan',
-            'Kemuning': 'Banjarbaru Selatan',
-            'Sungai Besar': 'Banjarbaru Selatan',
-            'Sungai Lulut': 'Banjarbaru Selatan',
-            'Landasan Ulin Tengah': 'Liang Anggang',
-            'Pangeran': 'Liang Anggang',
-            'Basirih': 'Liang Anggang',
-            'Liang Anggang Baru': 'Liang Anggang'
+            'Landasan Ulin Timur': 'Landasan Ulin', 'Landasan Ulin Barat': 'Landasan Ulin',
+            'Landasan Ulin Utara': 'Landasan Ulin', 'Syamsudin Noor': 'Landasan Ulin',
+            'Guntung Payung': 'Landasan Ulin', 'Guntung Manggis': 'Landasan Ulin',
+            'Cempaka': 'Cempaka', 'Bangkal': 'Cempaka', 'Palam': 'Cempaka',
+            'Sungai Tiung': 'Cempaka', 'Cempaka Baru': 'Cempaka',
+            'Loktabat Utara': 'Banjarbaru Utara', 'Loktabat Selatan': 'Banjarbaru Utara',
+            'Mentaos': 'Banjarbaru Utara', 'Sungai Ulin': 'Banjarbaru Utara', 'Komet': 'Banjarbaru Utara',
+            'Guntung Paikat': 'Banjarbaru Selatan', 'Kemuning': 'Banjarbaru Selatan',
+            'Sungai Besar': 'Banjarbaru Selatan', 'Sungai Lulut': 'Banjarbaru Selatan',
+            'Landasan Ulin Tengah': 'Liang Anggang', 'Pangeran': 'Liang Anggang',
+            'Basirih': 'Liang Anggang', 'Liang Anggang Baru': 'Liang Anggang'
         };
 
         function initMap(lat = defaultLat, lng = defaultLng) {
@@ -1166,9 +695,7 @@ foreach ($hydrants as $row) {
                 maxZoom: 19
             }).addTo(map);
 
-            marker = L.marker([lat, lng], {
-                draggable: true
-            }).addTo(map);
+            marker = L.marker([lat, lng], { draggable: true }).addTo(map);
             document.getElementById('latitude').value = lat;
             document.getElementById('longitude').value = lng;
 
@@ -1191,7 +718,7 @@ foreach ($hydrants as $row) {
         }
 
         async function reverseGeocode(lat, lng) {
-            document.getElementById('loadingOverlay').classList.add('show');
+            Swal.fire({ title: 'Menerjemahkan Lokasi...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=id&addressdetails=1`;
 
             try {
@@ -1232,7 +759,7 @@ foreach ($hydrants as $row) {
             } catch (err) {
                 console.log('Geocoding error:', err);
             } finally {
-                document.getElementById('loadingOverlay').classList.remove('show');
+                Swal.close();
             }
         }
 
@@ -1246,7 +773,7 @@ foreach ($hydrants as $row) {
             const lat = parseFloat(document.getElementById('latitude').value);
             const lng = parseFloat(document.getElementById('longitude').value);
             if (isNaN(lat) || isNaN(lng)) {
-                alert('Masukkan latitude dan longitude yang valid!');
+                Swal.fire({icon: 'warning', text: 'Masukkan latitude dan longitude yang valid!', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 return;
             }
             map.setView([lat, lng], 16);
@@ -1256,7 +783,7 @@ foreach ($hydrants as $row) {
 
         function getCurrentLocation() {
             if (navigator.geolocation) {
-                document.getElementById('loadingOverlay').classList.add('show');
+                Swal.fire({ title: 'Mencari Lokasi Anda...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
                 navigator.geolocation.getCurrentPosition(function(position) {
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
@@ -1264,13 +791,11 @@ foreach ($hydrants as $row) {
                     marker.setLatLng([lat, lng]);
                     updateCoordinatesFromLatLng(lat, lng);
                     reverseGeocode(lat, lng);
-                    document.getElementById('loadingOverlay').classList.remove('show');
                 }, function(error) {
-                    alert('Gagal mendapatkan lokasi: ' + error.message);
-                    document.getElementById('loadingOverlay').classList.remove('show');
+                    Swal.fire({icon: 'error', title: 'Gagal', text: 'Gagal mendapatkan lokasi: ' + error.message, customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 });
             } else {
-                alert('Browser tidak mendukung geolocation');
+                Swal.fire({icon: 'error', text: 'Browser tidak mendukung geolocation', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
             }
         }
 
@@ -1282,22 +807,12 @@ foreach ($hydrants as $row) {
 
         function openModal() {
             modal.classList.add('show');
-            setTimeout(() => {
-                map?.invalidateSize();
-            }, 200);
+            setTimeout(() => { map?.invalidateSize(); }, 200);
         }
 
-        function closeModalFunc() {
-            modal.classList.remove('show');
-        }
-
-        function closeDetailModal() {
-            detailModal.classList.remove('show');
-        }
-
-        function openSearchModal() {
-            searchModal.classList.add('show');
-        }
+        function closeModalFunc() { modal.classList.remove('show'); }
+        function closeDetailModal() { detailModal.classList.remove('show'); }
+        function openSearchModal() { searchModal.classList.add('show'); }
 
         function closeSearchModal() {
             searchModal.classList.remove('show');
@@ -1305,7 +820,6 @@ foreach ($hydrants as $row) {
             document.getElementById('searchResults').innerHTML = '';
         }
 
-        // Reset form untuk tambah
         btnTambah.addEventListener('click', function() {
             document.getElementById('hydrantForm').reset();
             document.getElementById('editId').value = '';
@@ -1319,30 +833,27 @@ foreach ($hydrants as $row) {
         document.getElementById('closeModal').addEventListener('click', closeModalFunc);
         document.getElementById('cancelModal').addEventListener('click', closeModalFunc);
         document.getElementById('closeDetailModal').addEventListener('click', closeDetailModal);
-        modal.addEventListener('click', function(e) {
-            if (e.target === modal) closeModalFunc();
-        });
-        detailModal.addEventListener('click', function(e) {
-            if (e.target === detailModal) closeDetailModal();
-        });
+        modal.addEventListener('click', function(e) { if (e.target === modal) closeModalFunc(); });
+        detailModal.addEventListener('click', function(e) { if (e.target === detailModal) closeDetailModal(); });
+        
         document.getElementById('applyCoordinates').addEventListener('click', applyManualCoordinates);
         document.getElementById('getCurrentLocation').addEventListener('click', getCurrentLocation);
         document.getElementById('searchAddressBtn').addEventListener('click', openSearchModal);
         document.getElementById('closeSearchModal').addEventListener('click', closeSearchModal);
         document.getElementById('cancelSearchModal').addEventListener('click', closeSearchModal);
-        searchModal.addEventListener('click', function(e) {
-            if (e.target === searchModal) closeSearchModal();
-        });
+        searchModal.addEventListener('click', function(e) { if (e.target === searchModal) closeSearchModal(); });
 
         document.getElementById('doSearch').addEventListener('click', async function() {
             const query = document.getElementById('searchAddress').value;
             if (!query) {
-                alert('Masukkan alamat yang ingin dicari!');
+                Swal.fire({icon: 'warning', text: 'Masukkan alamat yang ingin dicari!', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 return;
             }
-            document.getElementById('loadingOverlay').classList.add('show');
+            
+            Swal.fire({ title: 'Mencari Alamat...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             const results = await searchAddress(query);
-            document.getElementById('loadingOverlay').classList.remove('show');
+            Swal.close();
+            
             const resultsDiv = document.getElementById('searchResults');
             if (results.length === 0) {
                 resultsDiv.innerHTML = '<div class="alert alert-danger">Tidak ditemukan hasil</div>';
@@ -1454,7 +965,6 @@ foreach ($hydrants as $row) {
             });
         });
 
-        // Detail data
         document.querySelectorAll('.btn-detail').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.id;
@@ -1472,10 +982,11 @@ foreach ($hydrants as $row) {
             });
         }
 
-        // Submit form
+        // Submit form dengan SweetAlert2 dan AJAX
         $('#hydrantForm').on('submit', function(e) {
             e.preventDefault();
-            document.getElementById('loadingOverlay').classList.add('show');
+            Swal.fire({ title: 'Menyimpan Data...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+            
             const formData = new FormData(this);
             $.ajax({
                 url: 'save_data.php',
@@ -1485,16 +996,21 @@ foreach ($hydrants as $row) {
                 contentType: false,
                 dataType: 'json',
                 success: function(response) {
-                    document.getElementById('loadingOverlay').classList.remove('show');
                     if (response.success) {
-                        location.reload();
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Berhasil!',
+                            text: response.message,
+                            showConfirmButton: false,
+                            timer: 1500,
+                            customClass: {popup: 'swal2-popup'}
+                        }).then(() => location.reload());
                     } else {
-                        alert('Error: ' + response.message);
+                        Swal.fire({icon: 'error', title: 'Error', text: response.message, customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                     }
                 },
                 error: function() {
-                    document.getElementById('loadingOverlay').classList.remove('show');
-                    alert('Terjadi kesalahan!');
+                    Swal.fire({icon: 'error', title: 'Terjadi Kesalahan', text: 'Gagal menghubungi server.', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 }
             });
         });
@@ -1511,7 +1027,6 @@ foreach ($hydrants as $row) {
             }
         });
 
-        // Dropdown
         document.getElementById('userAvatar').addEventListener('click', function(e) {
             e.stopPropagation();
             document.getElementById('dropdownMenu').classList.toggle('show');
@@ -1520,17 +1035,10 @@ foreach ($hydrants as $row) {
             document.getElementById('dropdownMenu').classList.remove('show');
         });
 
-        // Initialize maps
         document.addEventListener('DOMContentLoaded', function() {
-            // Peta OSM di atas daftar
-            setTimeout(function() {
-                initMapOSM();
-            }, 300);
-            
-            // Peta di modal
+            setTimeout(function() { initMapOSM(); }, 300);
             initMap();
         });
     </script>
 </body>
-
 </html>

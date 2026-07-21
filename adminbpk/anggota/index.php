@@ -7,32 +7,24 @@ checkAuth();
 checkRole(['admin_bpk']);
 
 $bpk_id = $_SESSION['bpk_id'];
-$search = isset($_GET['search']) ? $_GET['search'] : '';
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
-
+$user = getCurrentUser();
 $conn = getConnection();
-$bpk = $conn->query("SELECT nama_bpk FROM bpk WHERE id = $bpk_id")->fetch_assoc();
 
-// Include sidebar dari folder includes
-include __DIR__ . '/../../includes/sidebar.php';
-
-// Query anggota
-$query = "SELECT * FROM anggota WHERE bpk_id = $bpk_id";
-if (!empty($search)) {
-    $query .= " AND (nama LIKE '%" . $conn->real_escape_string($search) . "%' 
-                 OR nik LIKE '%" . $conn->real_escape_string($search) . "%'
-                 OR no_hp LIKE '%" . $conn->real_escape_string($search) . "%'
-                 OR nomor_anggota LIKE '%" . $conn->real_escape_string($search) . "%')";
+// ============================================================
+// FUNGSI PENCATATAN LOG AKTIVITAS
+// ============================================================
+if (!function_exists('catatLog')) {
+    function catatLog($conn, $user, $aktivitas) {
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $nama = isset($user['nama']) ? $user['nama'] : $user['username'];
+        
+        $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssss", $user['id'], $user['username'], $user['role'], $nama, $aktivitas, $ip_address, $user_agent);
+        $stmt->execute();
+        $stmt->close();
+    }
 }
-if (!empty($status_filter)) {
-    $query .= " AND status = '" . $conn->real_escape_string($status_filter) . "'";
-}
-$query .= " ORDER BY nomor_anggota ASC";
-
-$anggota_list = $conn->query($query);
-$total = $anggota_list->num_rows;
-$aktif = $conn->query("SELECT COUNT(*) as t FROM anggota WHERE bpk_id=$bpk_id AND status='aktif'")->fetch_assoc()['t'];
-$nonaktif = $conn->query("SELECT COUNT(*) as t FROM anggota WHERE bpk_id=$bpk_id AND status='nonaktif'")->fetch_assoc()['t'];
 
 // Fungsi untuk mendapatkan nomor anggota berikutnya yang tersedia
 function getNextNomorAnggota($conn, $bpk_id)
@@ -51,8 +43,11 @@ function getNextNomorAnggota($conn, $bpk_id)
     return null;
 }
 
-// Proses Tambah/Edit via AJAX
+// ============================================================
+// PROSES AJAX TAMBAH, EDIT, HAPUS (HARUS DI ATAS SIDEBAR)
+// ============================================================
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
+    ob_clean(); // Bersihkan output sebelum mengirim JSON
     header('Content-Type: application/json');
 
     if ($_POST['action'] == 'tambah' || $_POST['action'] == 'edit') {
@@ -135,6 +130,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
 
         if ($stmt->execute()) {
             $conn->query("UPDATE bpk SET jumlah_anggota = (SELECT COUNT(*) FROM anggota WHERE bpk_id = $bpk_id AND status = 'aktif') WHERE id = $bpk_id");
+            
+            // Log Aktivitas
+            $pesan_log = $_POST['action'] == 'tambah' 
+                ? "Menambahkan anggota baru: $nama (No: ".sprintf("%02d", $nomor_anggota).")" 
+                : "Memperbarui data anggota: $nama";
+            catatLog($conn, $user, $pesan_log);
+
             echo json_encode(['success' => true, 'message' => $_POST['action'] == 'tambah' ? 'Anggota berhasil ditambahkan! (Nomor: ' . sprintf("%02d", $nomor_anggota) . ')' : 'Data berhasil diupdate!']);
         } else {
             echo json_encode(['success' => false, 'message' => 'Gagal menyimpan data!']);
@@ -145,12 +147,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
 
     if ($_POST['action'] == 'hapus') {
         $hapus_id = (int)$_POST['id'];
-        $stmt = $conn->prepare("SELECT foto, foto_ktp FROM anggota WHERE id = ? AND bpk_id = ?");
+        $stmt = $conn->prepare("SELECT nama, foto, foto_ktp FROM anggota WHERE id = ? AND bpk_id = ?");
         $stmt->bind_param("ii", $hapus_id, $bpk_id);
         $stmt->execute();
         $result = $stmt->get_result();
+        
+        $nama_anggota = "ID $hapus_id";
         if ($result->num_rows > 0) {
             $row = $result->fetch_assoc();
+            $nama_anggota = $row['nama'];
+            
             if ($row['foto'] && file_exists('../../assets/img/uploads/anggota/' . $row['foto'])) {
                 unlink('../../assets/img/uploads/anggota/' . $row['foto']);
             }
@@ -164,6 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $stmt->bind_param("ii", $hapus_id, $bpk_id);
         if ($stmt->execute()) {
             $conn->query("UPDATE bpk SET jumlah_anggota = (SELECT COUNT(*) FROM anggota WHERE bpk_id = $bpk_id AND status = 'aktif') WHERE id = $bpk_id");
+            catatLog($conn, $user, "Menghapus anggota: $nama_anggota");
             echo json_encode(['success' => true, 'message' => 'Anggota berhasil dihapus!']);
         } else {
             echo json_encode(['success' => false, 'message' => 'Gagal menghapus!']);
@@ -172,6 +179,43 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         exit();
     }
 }
+
+// ============================================================
+// BAGIAN RENDER HALAMAN
+// ============================================================
+
+$search = isset($_GET['search']) ? $_GET['search'] : '';
+$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+
+// Catat log jika user melakukan pencarian atau pemfilteran
+if (!empty($search)) {
+    catatLog($conn, $user, "Mencari data anggota dengan kata kunci: " . $search);
+} elseif (!empty($status_filter)) {
+    catatLog($conn, $user, "Memfilter data anggota berdasarkan status: " . $status_filter);
+}
+
+$bpk = $conn->query("SELECT nama_bpk FROM bpk WHERE id = $bpk_id")->fetch_assoc();
+
+// Include sidebar dari folder includes
+include __DIR__ . '/../../includes/sidebar.php';
+
+// Query anggota
+$query = "SELECT * FROM anggota WHERE bpk_id = $bpk_id";
+if (!empty($search)) {
+    $query .= " AND (nama LIKE '%" . $conn->real_escape_string($search) . "%' 
+                 OR nik LIKE '%" . $conn->real_escape_string($search) . "%'
+                 OR no_hp LIKE '%" . $conn->real_escape_string($search) . "%'
+                 OR nomor_anggota LIKE '%" . $conn->real_escape_string($search) . "%')";
+}
+if (!empty($status_filter)) {
+    $query .= " AND status = '" . $conn->real_escape_string($status_filter) . "'";
+}
+$query .= " ORDER BY nomor_anggota ASC";
+
+$anggota_list = $conn->query($query);
+$total = $anggota_list->num_rows;
+$aktif = $conn->query("SELECT COUNT(*) as t FROM anggota WHERE bpk_id=$bpk_id AND status='aktif'")->fetch_assoc()['t'];
+$nonaktif = $conn->query("SELECT COUNT(*) as t FROM anggota WHERE bpk_id=$bpk_id AND status='nonaktif'")->fetch_assoc()['t'];
 
 $next_nomor = getNextNomorAnggota($conn, $bpk_id);
 $conn->close();
@@ -696,6 +740,10 @@ $conn->close();
             font-weight: 700;
             margin: 0 auto 15px;
         }
+
+        /* Custom SweetAlert */
+        .swal2-popup { font-family: 'Poppins', sans-serif !important; border-radius: 20px !important; }
+        .swal2-confirm, .swal2-cancel { border-radius: 12px !important; font-weight: 600 !important; }
 
         @media (max-width: 768px) {
             .main-content {
@@ -1269,9 +1317,12 @@ $conn->close();
                 confirmButtonColor: '#F7B801',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Ya, Hapus!',
-                cancelButtonText: 'Batal'
+                cancelButtonText: 'Batal',
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm', cancelButton: 'swal2-cancel' }
             }).then((result) => {
                 if (result.isConfirmed) {
+                    Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }, customClass: { popup: 'swal2-popup' } });
+                    
                     const formData = new FormData();
                     formData.append('action', 'hapus');
                     formData.append('id', id);
@@ -1283,11 +1334,12 @@ $conn->close();
                         .then(res => res.json())
                         .then(data => {
                             if (data.success) {
-                                Swal.fire('Terhapus!', data.message, 'success').then(() => location.reload());
+                                Swal.fire({icon: 'success', title: 'Terhapus!', text: data.message, showConfirmButton: false, timer: 1500, customClass: { popup: 'swal2-popup' }}).then(() => location.reload());
                             } else {
-                                Swal.fire('Error!', data.message, 'error');
+                                Swal.fire({icon: 'error', title: 'Error!', text: data.message, customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }});
                             }
-                        });
+                        })
+                        .catch(() => Swal.fire({icon: 'error', title: 'Error!', text: 'Gagal menghubungi server.', customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }}));
                 }
             });
         }
@@ -1318,11 +1370,14 @@ $conn->close();
             setTimeout(() => win.print(), 500);
         }
 
-        // Submit forms
+        // Submit form Tambah
         document.getElementById('formTambah').addEventListener('submit', function(e) {
             e.preventDefault();
+            Swal.fire({ title: 'Menyimpan Data...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }, customClass: { popup: 'swal2-popup' } });
+            
             const formData = new FormData(this);
             formData.append('action', 'tambah');
+            
             fetch('index.php', {
                     method: 'POST',
                     body: formData
@@ -1330,18 +1385,22 @@ $conn->close();
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
-                        Swal.fire('Sukses!', data.message, 'success').then(() => location.reload());
-                        bootstrap.Modal.getInstance(document.getElementById('modalTambah')).hide();
+                        Swal.fire({icon: 'success', title: 'Sukses!', text: data.message, showConfirmButton: false, timer: 1500, customClass: { popup: 'swal2-popup' }}).then(() => location.reload());
                     } else {
-                        Swal.fire('Error!', data.message, 'error');
+                        Swal.fire({icon: 'error', title: 'Error!', text: data.message, customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }});
                     }
-                });
+                })
+                .catch(() => Swal.fire({icon: 'error', title: 'Error!', text: 'Gagal menghubungi server.', customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }}));
         });
 
+        // Submit form Edit
         document.getElementById('formEdit').addEventListener('submit', function(e) {
             e.preventDefault();
+            Swal.fire({ title: 'Mengupdate Data...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }, customClass: { popup: 'swal2-popup' } });
+            
             const formData = new FormData(this);
             formData.append('action', 'edit');
+            
             fetch('index.php', {
                     method: 'POST',
                     body: formData
@@ -1349,12 +1408,12 @@ $conn->close();
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
-                        Swal.fire('Sukses!', data.message, 'success').then(() => location.reload());
-                        bootstrap.Modal.getInstance(document.getElementById('modalEdit')).hide();
+                        Swal.fire({icon: 'success', title: 'Sukses!', text: data.message, showConfirmButton: false, timer: 1500, customClass: { popup: 'swal2-popup' }}).then(() => location.reload());
                     } else {
-                        Swal.fire('Error!', data.message, 'error');
+                        Swal.fire({icon: 'error', title: 'Error!', text: data.message, customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }});
                     }
-                });
+                })
+                .catch(() => Swal.fire({icon: 'error', title: 'Error!', text: 'Gagal menghubungi server.', customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }}));
         });
 
         // User dropdown
@@ -1367,5 +1426,4 @@ $conn->close();
         });
     </script>
 </body>
-
 </html>

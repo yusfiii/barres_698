@@ -1,34 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/session.php';
-
-$message_sent = false;
-$error_message = '';
-
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $nama = trim($_POST['nama'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $pesan = trim($_POST['pesan'] ?? '');
-
-    if (empty($nama) || empty($email) || empty($pesan)) {
-        $error_message = 'Semua field harus diisi!';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error_message = 'Email tidak valid!';
-    } else {
-        // Simpan ke database atau kirim email
-        $conn = getConnection();
-        $stmt = $conn->prepare("INSERT INTO kontak_pesan (nama, email, pesan, created_at) VALUES (?, ?, ?, NOW())");
-        $stmt->bind_param("sss", $nama, $email, $pesan);
-
-        if ($stmt->execute()) {
-            $message_sent = true;
-        } else {
-            $error_message = 'Gagal mengirim pesan. Silakan coba lagi.';
-        }
-        $stmt->close();
-        $conn->close();
-    }
-}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -306,6 +278,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             transition: all .3s;
             height: 100%;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+            cursor: pointer;
         }
 
         .contact-card:hover {
@@ -358,6 +331,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             font-weight: 600;
             display: inline-block;
             margin-top: 12px;
+        }
+
+        /* Card Link Wrapper */
+        .contact-card-link {
+            text-decoration: none !important;
+            display: block;
+            height: 100%;
         }
 
         /* Form Card */
@@ -433,35 +413,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         .map-container iframe {
             width: 100%;
-            height: 350px;
+            height: 450px;
             display: block;
-        }
-
-        /* Social Icons */
-        .social-links {
-            display: flex;
-            gap: 16px;
-            margin-top: 24px;
-        }
-
-        .social-link {
-            width: 44px;
-            height: 44px;
-            border-radius: 12px;
-            background: rgba(247, 184, 1, 0.1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--gold);
-            font-size: 1.2rem;
-            transition: all .3s;
-            text-decoration: none;
-        }
-
-        .social-link:hover {
-            background: var(--gold);
-            color: var(--jet-black);
-            transform: translateY(-3px);
         }
 
         /* Footer */
@@ -722,97 +675,84 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <section class="section section-light">
         <div class="container">
             <div class="row g-4">
-                <div class="col-md-4 reveal">
+                
+                <!-- Card 1: Alamat -->
+                <div class="col-md-6 col-lg-3 reveal">
                     <div class="contact-card">
                         <div class="contact-icon">
                             <i class="fas fa-map-marker-alt"></i>
                         </div>
                         <h3>Alamat</h3>
-                        <p>Jl. A Yani Km 35</p>
-                        <p class="contact-value">Banjarbaru, Kalimantan Selatan</p>
+                        <p>Jl. Zafri Zam-Zam II, Guntungmanggis</p>
+                        <p class="contact-value">Kec. Landasan Ulin, Kota Banjar Baru, Kalsel 70714</p>
                     </div>
                 </div>
-                <div class="col-md-4 reveal">
-                    <div class="contact-card">
-                        <div class="contact-icon">
-                            <i class="fas fa-phone-alt"></i>
+
+                <!-- Card 2: WhatsApp (Direct Link) -->
+                <div class="col-md-6 col-lg-3 reveal">
+                    <a href="https://wa.me/6285111315698" target="_blank" class="contact-card-link">
+                        <div class="contact-card">
+                            <div class="contact-icon">
+                                <i class="fab fa-whatsapp"></i>
+                            </div>
+                            <h3>WhatsApp</h3>
+                            <p>Layanan Cepat:</p>
+                            <p class="contact-value"><strong>0851 1131 5698</strong> <span class="emergency-badge">24 Jam</span></p>
                         </div>
-                        <h3>Telepon</h3>
-                        <p>Layanan Darurat:</p>
-                        <p class="contact-value"><strong>113</strong> <span class="emergency-badge">24 Jam</span></p>
-                        <p class="mt-2">Kantor: <strong>(0511) 123456</strong></p>
-                    </div>
+                    </a>
                 </div>
-                <div class="col-md-4 reveal">
-                    <div class="contact-card">
-                        <div class="contact-icon">
-                            <i class="fas fa-envelope"></i>
+
+                <!-- Card 3: Email (Direct Link) -->
+                <div class="col-md-6 col-lg-3 reveal">
+                    <a href="mailto:barres698.banjarbaru@gmail.com" class="contact-card-link">
+                        <div class="contact-card">
+                            <div class="contact-icon">
+                                <i class="fas fa-envelope"></i>
+                            </div>
+                            <h3>Email</h3>
+                            <p>Kirimkan email ke:</p>
+                            <p class="contact-value" style="word-break: break-all;">barres698.banjarbaru@gmail.com</p>
                         </div>
-                        <h3>Email</h3>
-                        <p>info@barres698.id</p>
-                        <p class="contact-value">barres698@gmail.com</p>
-                        <div class="social-links">
-                            <a href="#" class="social-link"><i class="fab fa-facebook-f"></i></a>
-                            <a href="#" class="social-link"><i class="fab fa-instagram"></i></a>
-                            <a href="#" class="social-link"><i class="fab fa-twitter"></i></a>
-                            <a href="#" class="social-link"><i class="fab fa-youtube"></i></a>
-                        </div>
-                    </div>
+                    </a>
                 </div>
+
+                <!-- Card 4: Instagram (Direct Link) -->
+                <div class="col-md-6 col-lg-3 reveal">
+                    <a href="https://instagram.com/barres698_bjb" target="_blank" class="contact-card-link">
+                        <div class="contact-card">
+                            <div class="contact-icon">
+                                <i class="fab fa-instagram"></i>
+                            </div>
+                            <h3>Instagram</h3>
+                            <p>Follow update kami:</p>
+                            <p class="contact-value">@barres698_bjb</p>
+                        </div>
+                    </a>
+                </div>
+
             </div>
         </div>
     </section>
 
-    <!-- CONTACT FORM & MAP SECTION -->
+    <!-- MAP SECTION FULL WIDTH -->
     <section class="section section-dark">
         <div class="container">
-            <div class="row g-5">
-                <div class="col-lg-6 reveal">
-                    <div class="form-card">
-                        <h3>Kirim Pesan</h3>
-                        <p class="subtitle">Isi form di bawah untuk menghubungi kami</p>
-
-                        <?php if ($message_sent): ?>
-                            <div class="alert alert-success mb-4" style="background: rgba(247, 184, 1, 0.15); border: 1px solid var(--gold); color: var(--gold);">
-                                <i class="fas fa-check-circle me-2"></i> Pesan Anda telah terkirim. Terima kasih!
-                            </div>
-                        <?php endif; ?>
-
-                        <?php if ($error_message): ?>
-                            <div class="alert alert-danger mb-4" style="background: rgba(220, 53, 69, 0.15); border: 1px solid #dc3545; color: #ff6b6b;">
-                                <i class="fas fa-exclamation-triangle me-2"></i> <?= $error_message ?>
-                            </div>
-                        <?php endif; ?>
-
-                        <form method="POST">
-                            <div class="mb-3">
-                                <input type="text" name="nama" class="form-control form-control-custom" placeholder="Nama Lengkap" required>
-                            </div>
-                            <div class="mb-3">
-                                <input type="email" name="email" class="form-control form-control-custom" placeholder="Alamat Email" required>
-                            </div>
-                            <div class="mb-3">
-                                <textarea name="pesan" class="form-control form-control-custom" rows="5" placeholder="Tulis pesan Anda di sini..." required></textarea>
-                            </div>
-                            <button type="submit" class="btn-submit">
-                                <i class="fas fa-paper-plane me-2"></i> Kirim Pesan
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <div class="col-lg-6 reveal">
+            <div class="row justify-content-center reveal">
+                <div class="col-lg-10">
                     <div class="form-card" style="padding: 0; overflow: hidden;">
-                        <div style="padding: 24px 24px 0 24px;">
+                        <div style="padding: 32px 24px 0 24px; text-align: center;">
                             <h3>Lokasi Kami</h3>
-                            <p class="subtitle">Kantor Pusat BARRES 698 Banjarbaru</p>
+                            <p class="subtitle mb-4">Sekretariat BARRES 698 Banjarbaru</p>
                         </div>
                         <div class="map-container" style="margin-top: 0; border-radius: 0;">
-                            <iframe
-                                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d127377.42743510488!2d114.73182015!3d-3.4572425!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2de42c2b6d6d2e2d%3A0x8b7e8f8e8e8e8e8e!2sBanjarbaru%2C%20Kalimantan%20Selatan!5e0!3m2!1sid!2sid!4v1700000000000!5m2!1sid!2sid"
-                                allowfullscreen=""
-                                loading="lazy"
-                                referrerpolicy="no-referrer-when-downgrade">
+                            <iframe 
+                                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3604.014334922858!2d114.82541947449964!3d-3.4552614418426977!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2de681001af803a3%3A0x23bebf872b30d0a1!2sSekretariat%20Banjarbaru%20Rescue%20698%20(BARRES%20698)!5e1!3m2!1sid!2sid!4v1784186964959!5m2!1sid!2sid" 
+                                width="100%" 
+                                height="450" 
+                                style="border:0;" 
+                                allowfullscreen="" 
+                                loading="lazy" 
+                                referrerpolicy="strict-origin-when-cross-origin">
                             </iframe>
                         </div>
                     </div>

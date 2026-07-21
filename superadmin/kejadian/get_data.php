@@ -52,7 +52,7 @@ try {
     $result = $stmt->get_result();
 
     if ($row = $result->fetch_assoc()) {
-        // Format data untuk response
+        // Format data untuk response (Sesuaikan parameter "skala" menjadi "kerusakan")
         $data = [
             'id' => $row['id'],
             'waktu' => $row['waktu'],
@@ -66,6 +66,9 @@ try {
             'jumlah_individu' => $row['jumlah_individu'] ?? 0,
             'korban_luka' => $row['korban_luka'] ?? 0,
             'korban_jiwa' => $row['korban_jiwa'] ?? 0,
+            'penyebab' => $row['penyebab'] ?? '',
+            'kerusakan' => $row['kerusakan'] ?? '', // Update bagian ini
+            'keterangan' => $row['keterangan'] ?? '',
             'foto' => $row['foto'] ?? null,
             'created_at' => $row['created_at'] ?? null,
             'dibuat_oleh' => $row['dibuat_oleh_nama'] ?? '-',

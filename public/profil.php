@@ -8,8 +8,7 @@ $conn = getConnection();
 $bpk_query = "
     SELECT 
         b.*,
-        COUNT(DISTINCT a.id) as total_anggota,
-        GROUP_CONCAT(DISTINCT a.nama ORDER BY a.jabatan = 'Ketua' DESC SEPARATOR '||') as anggota_list
+        COUNT(DISTINCT a.id) as total_anggota
     FROM bpk b
     LEFT JOIN anggota a ON a.bpk_id = b.id AND a.status = 'aktif'
     GROUP BY b.id
@@ -18,19 +17,19 @@ $bpk_query = "
 $bpk_result = $conn->query($bpk_query);
 $bpk_list = [];
 while ($row = $bpk_result->fetch_assoc()) {
-    $anggota_names = [];
-    if ($row['anggota_list']) {
-        $anggota_names = explode('||', $row['anggota_list']);
-    }
-    $row['anggota_count'] = $row['total_anggota'];
-    $row['anggota_names'] = $anggota_names;
     $bpk_list[] = $row;
 }
 $total_bpk = count($bpk_list);
+
 // Ambil statistik total anggota
 $total_anggota_query = "SELECT COUNT(*) as total FROM anggota WHERE status = 'aktif'";
 $total_anggota_result = $conn->query($total_anggota_query);
 $total_anggota = $total_anggota_result->fetch_assoc()['total'] ?? 0;
+
+// Ambil data kejadian terbaru untuk statistik
+$kejadian_query = "SELECT COUNT(*) as total FROM kejadian_kebakaran";
+$kejadian_result = $conn->query($kejadian_query);
+$total_kejadian = $kejadian_result->fetch_assoc()['total'] ?? 0;
 
 $conn->close();
 ?>
@@ -310,6 +309,65 @@ $conn->close();
             color: #4a4540;
         }
 
+        /* Sejarah Section */
+        .sejarah-img-container {
+            border-radius: 20px;
+            overflow: hidden;
+            border: 1px solid rgba(247, 184, 1, 0.2);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.08);
+        }
+
+        .sejarah-img-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            min-height: 300px;
+            transition: transform .5s ease;
+        }
+
+        .sejarah-img-container:hover img {
+            transform: scale(1.02);
+        }
+
+        .stat-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 24px 20px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+            border: 1px solid rgba(0,0,0,0.04);
+            transition: all .3s;
+            height: 100%;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(247, 184, 1, 0.12);
+            border-color: var(--gold);
+        }
+
+        .stat-card .number {
+            font-family: 'Poppins', sans-serif;
+            font-weight: 800;
+            font-size: 2.8rem;
+            color: var(--gold);
+            line-height: 1.2;
+        }
+
+        .stat-card .label {
+            font-size: .75rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #888;
+            font-weight: 500;
+        }
+
+        .stat-card .icon {
+            font-size: 1.8rem;
+            color: rgba(247, 184, 1, 0.2);
+            margin-bottom: 8px;
+        }
+
         /* Vision & Mission Cards */
         .vm-card {
             background: var(--dark-grey);
@@ -363,42 +421,10 @@ $conn->close();
             margin-bottom: 10px;
         }
 
-        /* Stats Row */
-        .stats-row {
-            display: flex;
-            gap: 24px;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 40px;
-        }
-
-        .stat-mini-card {
-            background: rgba(247, 184, 1, 0.08);
-            border: 1px solid rgba(247, 184, 1, 0.2);
-            border-radius: 20px;
-            padding: 24px 32px;
-            text-align: center;
-            min-width: 180px;
-        }
-
-        .stat-mini-card .number {
-            font-family: 'Poppins', sans-serif;
-            font-weight: 800;
-            font-size: 2.5rem;
-            color: var(--gold);
-        }
-
-        .stat-mini-card .label {
-            font-size: .75rem;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: rgba(255, 255, 255, .5);
-        }
-
         /* BPK Grid */
         .bpk-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 24px;
             margin-top: 40px;
         }
@@ -409,6 +435,8 @@ $conn->close();
             padding: 24px;
             border: 1px solid rgba(247, 184, 1, 0.12);
             transition: all .3s;
+            position: relative;
+            overflow: hidden;
         }
 
         .bpk-card:hover {
@@ -416,68 +444,124 @@ $conn->close();
             transform: translateY(-4px);
         }
 
+        .bpk-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--gold), var(--gold-dark));
+            opacity: 0;
+            transition: opacity .3s;
+        }
+
+        .bpk-card:hover::before {
+            opacity: 1;
+        }
+
         .bpk-header {
             display: flex;
             align-items: center;
             gap: 16px;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
 
-        .bpk-icon {
-            width: 55px;
-            height: 55px;
-            background: rgba(247, 184, 1, 0.12);
-            border-radius: 16px;
+        .bpk-logo {
+            width: 60px;
+            height: 60px;
+            border-radius: 14px;
+            background: rgba(247, 184, 1, 0.08);
+            border: 1px solid rgba(247, 184, 1, 0.15);
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: hidden;
+            flex-shrink: 0;
         }
 
-        .bpk-icon i {
+        .bpk-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .bpk-logo .default-icon {
             font-size: 24px;
             color: var(--gold);
         }
 
         .bpk-title h4 {
-            font-size: 1.1rem;
+            font-size: 1.05rem;
             font-weight: 700;
             color: #fff;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
+            line-height: 1.3;
         }
 
-        .bpk-title p {
+        .bpk-title .bpk-location {
             font-size: .75rem;
             color: var(--gold);
-            margin-bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .bpk-title .bpk-location i {
+            font-size: .65rem;
+        }
+
+        .bpk-details {
+            margin-top: 12px;
         }
 
         .bpk-detail-item {
             display: flex;
             align-items: center;
-            gap: 12px;
-            font-size: .85rem;
+            gap: 10px;
+            font-size: .82rem;
             color: rgba(255, 255, 255, .6);
-            margin-bottom: 12px;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+
+        .bpk-detail-item:last-child {
+            border-bottom: none;
         }
 
         .bpk-detail-item i {
             color: var(--gold);
-            width: 20px;
+            width: 18px;
+            font-size: .8rem;
+            text-align: center;
         }
 
-        .anggota-list {
+        .bpk-members {
+            margin-top: 14px;
             display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 12px;
+            align-items: center;
+            gap: 10px;
+            background: rgba(247, 184, 1, 0.06);
+            padding: 8px 14px;
+            border-radius: 12px;
+            border: 1px solid rgba(247, 184, 1, 0.08);
         }
 
-        .anggota-tag {
-            background: rgba(247, 184, 1, 0.1);
-            border-radius: 12px;
-            padding: 3px 10px;
-            font-size: .7rem;
+        .bpk-members i {
+            color: var(--gold);
+            font-size: .9rem;
+        }
+
+        .bpk-members span {
+            font-size: .8rem;
             color: rgba(255, 255, 255, .7);
+            font-weight: 500;
+        }
+
+        .bpk-members .count {
+            color: var(--gold);
+            font-weight: 700;
+            font-size: 1rem;
         }
 
         /* Footer */
@@ -681,6 +765,29 @@ $conn->close();
                 gap: 16px;
                 text-align: center;
             }
+
+            .bpk-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .sejarah-img-container img {
+                min-height: 200px;
+            }
+        }
+
+        @media (max-width: 576px) {
+            .stat-card .number {
+                font-size: 2rem;
+            }
+
+            .bpk-card {
+                padding: 18px;
+            }
+
+            .bpk-header {
+                flex-direction: column;
+                text-align: center;
+            }
         }
     </style>
 </head>
@@ -738,28 +845,43 @@ $conn->close();
                     <div class="section-label">Perjalanan Kami</div>
                     <h2 class="section-title">Sejarah <span style="color: var(--gold);">BARRES 698</span></h2>
                     <p class="section-text" style="color: #4a4540;">
-                        BARRES 698 didirikan pada tahun 2015 sebagai organisasi relawan kebakaran yang berdedikasi
+                        BARRES 698 didirikan pada tahun <strong style="color: var(--gold);">2005</strong> sebagai organisasi relawan kebakaran yang berdedikasi
                         untuk membantu masyarakat Kota Banjarbaru dalam penanggulangan kebakaran. Dengan semangat
                         kerelawanan dan profesionalisme, BARRES 698 terus berkembang menjadi organisasi yang disegani
                         di Kalimantan Selatan.
                     </p>
-                    <div class="stats-row">
-                        <div class="stat-mini-card">
-                            <div class="number">2015</div>
-                            <div class="label">Tahun Berdiri</div>
+                    <p class="section-text" style="color: #4a4540; margin-top: 12px;">
+                        Selama hampir dua dekade, BARRES 698 telah menjadi garda terdepan dalam penanganan darurat kebakaran
+                        serta aktif dalam kegiatan sosial dan edukasi pencegahan kebakaran di masyarakat.
+                    </p>
+                    <div class="row g-3 mt-3">
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <div class="icon"><i class="fas fa-calendar-alt"></i></div>
+                                <div class="number">2005</div>
+                                <div class="label">Tahun Berdiri</div>
+                            </div>
                         </div>
-                        <div class="stat-mini-card">
-                            <div class="number"><?= $total_bpk ?></div>
-                            <div class="label">Unit BPK</div>
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <div class="icon"><i class="fas fa-building"></i></div>
+                                <div class="number"><?= $total_bpk ?></div>
+                                <div class="label">Unit BPK</div>
+                            </div>
                         </div>
-                        <div class="stat-mini-card">
-                            <div class="number"><?= $total_anggota ?></div>
-                            <div class="label">Anggota Aktif</div>
+                        <div class="col-4">
+                            <div class="stat-card">
+                                <div class="icon"><i class="fas fa-users"></i></div>
+                                <div class="number"><?= $total_anggota ?></div>
+                                <div class="label">Anggota Aktif</div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 <div class="col-lg-6 reveal">
-                    <img src="https://placehold.co/600x400/2A2A2A/F7B801?text=BARRES+698" alt="BARRES 698" class="img-fluid rounded-4" style="border: 1px solid rgba(247, 184, 1, 0.2);">
+                    <div class="sejarah-img-container">
+                        <img src="../assets/barres3.jpeg" alt="BARRES 698 Sejarah" onerror="this.src='https://placehold.co/600x400/2A2A2A/F7B801?text=BARRES+698'">
+                    </div>
                 </div>
             </div>
         </div>
@@ -816,40 +938,54 @@ $conn->close();
             </div>
 
             <div class="bpk-grid reveal">
-                <?php foreach ($bpk_list as $bpk): ?>
+                <?php foreach ($bpk_list as $bpk): 
+                    $logo_path = '../assets/img/uploads/logo/' . strtolower(str_replace(' ', '', $bpk['nama_bpk'])) . '.jpg';
+                    // Cek apakah file logo ada
+                    $logo_exists = file_exists(__DIR__ . '/../assets/img/uploads/logo/' . strtolower(str_replace(' ', '', $bpk['nama_bpk'])) . '.jpg');
+                    
+                    // Tampilkan kecamatan dan kelurahan
+                    $kecamatan = $bpk['kecamatan'] ?? '-';
+                    $kelurahan = $bpk['kelurahan'] ?? '-';
+                    $location_display = $kecamatan;
+                    if ($kelurahan != '-' && $kelurahan != $kecamatan) {
+                        $location_display = $kelurahan . ', ' . $kecamatan;
+                    }
+                ?>
                     <div class="bpk-card">
                         <div class="bpk-header">
-                            <div class="bpk-icon">
-                                <i class="fas fa-fire-extinguisher"></i>
+                            <div class="bpk-logo">
+                                <?php if ($logo_exists): ?>
+                                    <img src="../assets/img/uploads/logo/<?= strtolower(str_replace(' ', '', $bpk['nama_bpk'])) ?>.jpg" alt="Logo <?= htmlspecialchars($bpk['nama_bpk']) ?>">
+                                <?php else: ?>
+                                    <i class="fas fa-fire-extinguisher default-icon"></i>
+                                <?php endif; ?>
                             </div>
                             <div class="bpk-title">
                                 <h4><?= htmlspecialchars($bpk['nama_bpk'] ?? $bpk['kecamatan']) ?></h4>
-                                <p><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($bpk['kecamatan'] ?? '-') ?></p>
+                                <div class="bpk-location">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                    <?= htmlspecialchars($location_display) ?>
+                                </div>
                             </div>
                         </div>
-                        <div class="bpk-detail-item">
-                            <i class="fas fa-calendar-alt"></i>
-                            <span>Tahun Berdiri: <?= htmlspecialchars($bpk['tahun_berdiri'] ?? '-') ?></span>
-                        </div>
-                        <div class="bpk-detail-item">
-                            <i class="fas fa-phone"></i>
-                            <span>Kontak: <?= htmlspecialchars($bpk['kontak'] ?? '-') ?></span>
-                        </div>
-                        <div class="bpk-detail-item">
-                            <i class="fas fa-location-dot"></i>
-                            <span>Alamat: <?= htmlspecialchars(substr($bpk['alamat'] ?? '-', 0, 50)) ?></span>
-                        </div>
-                        <?php if ($bpk['anggota_count'] > 0): ?>
-                            <div class="anggota-list">
-                                <span class="anggota-tag"><i class="fas fa-users"></i> <?= $bpk['anggota_count'] ?> Anggota</span>
-                                <?php foreach (array_slice($bpk['anggota_names'], 0, 3) as $anggota): ?>
-                                    <span class="anggota-tag"><?= htmlspecialchars(substr($anggota, 0, 15)) ?></span>
-                                <?php endforeach; ?>
-                                <?php if ($bpk['anggota_count'] > 3): ?>
-                                    <span class="anggota-tag">+<?= $bpk['anggota_count'] - 3 ?> lagi</span>
-                                <?php endif; ?>
+                        <div class="bpk-details">
+                            <div class="bpk-detail-item">
+                                <i class="fas fa-calendar-alt"></i>
+                                <span>Tahun Berdiri: <?= htmlspecialchars($bpk['tahun_berdiri'] ?? '-') ?></span>
                             </div>
-                        <?php endif; ?>
+                            <div class="bpk-detail-item">
+                                <i class="fas fa-phone"></i>
+                                <span>Kontak: <?= htmlspecialchars($bpk['no_hp'] ?? $bpk['kontak'] ?? '-') ?></span>
+                            </div>
+                            <div class="bpk-detail-item">
+                                <i class="fas fa-location-dot"></i>
+                                <span>Alamat: <?= htmlspecialchars(substr($bpk['alamat'] ?? '-', 0, 40)) ?></span>
+                            </div>
+                        </div>
+                        <div class="bpk-members">
+                            <i class="fas fa-users"></i>
+                            <span><span class="count"><?= $bpk['total_anggota'] ?></span> Anggota Aktif</span>
+                        </div>
                     </div>
                 <?php endforeach; ?>
                 <?php if (empty($bpk_list)): ?>

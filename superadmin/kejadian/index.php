@@ -10,6 +10,22 @@ $user = getCurrentUser();
 $message = '';
 $messageType = '';
 
+// ============================================================
+// FUNGSI PENCATATAN LOG AKTIVITAS (Sesuai Struktur Database)
+// ============================================================
+if (!function_exists('catatLog')) {
+    function catatLog($conn, $user, $aktivitas) {
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $nama = isset($user['nama']) ? $user['nama'] : $user['username'];
+        
+        $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssss", $user['id'], $user['username'], $user['role'], $nama, $aktivitas, $ip_address, $user_agent);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
 // Filter parameters
 $search = isset($_GET['search']) ? $_GET['search'] : '';
 $filter_kecamatan = isset($_GET['kecamatan']) ? $_GET['kecamatan'] : '';
@@ -18,7 +34,6 @@ $filter_bulan = isset($_GET['bulan']) ? $_GET['bulan'] : '';
 // Get total BPK untuk sidebar
 $conn = getConnection();
 $total_bpk = $conn->query("SELECT COUNT(*) as total FROM bpk")->fetch_assoc()['total'];
-$conn->close();
 
 // Include sidebar
 include __DIR__ . '/../../includes/sidebar.php';
@@ -28,10 +43,9 @@ include __DIR__ . '/../../includes/sidebar.php';
 // ============================================================
 if (isset($_GET['delete'])) {
     $id = intval($_GET['delete']);
-    $conn = getConnection();
 
     // Ambil foto untuk dihapus
-    $stmt = $conn->prepare("SELECT foto FROM kejadian_kebakaran WHERE id = ?");
+    $stmt = $conn->prepare("SELECT foto, alamat FROM kejadian_kebakaran WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -50,16 +64,14 @@ if (isset($_GET['delete'])) {
     $stmt->bind_param("i", $id);
     
     if ($stmt->execute()) {
-        // LOG AKTIVITAS
-        logAktivitas('Menghapus data kejadian kebakaran ID: ' . $id, $_SESSION['user_id']);
-        $message = "Data berhasil dihapus!";
+        catatLog($conn, $user, "Menghapus data kejadian kebakaran ID: $id (Alamat: " . ($kejadian['alamat'] ?? '') . ")");
+        $message = "Data kejadian berhasil dihapus!";
         $messageType = "success";
     } else {
-        $message = "Gagal menghapus data!";
-        $messageType = "danger";
+        $message = "Gagal menghapus data kejadian!";
+        $messageType = "error";
     }
     $stmt->close();
-    $conn->close();
 }
 
 // ============================================================
@@ -67,7 +79,6 @@ if (isset($_GET['delete'])) {
 // ============================================================
 if (isset($_GET['geocode']) && isset($_GET['id'])) {
     $id = intval($_GET['id']);
-    $conn = getConnection();
     
     $stmt = $conn->prepare("SELECT alamat FROM kejadian_kebakaran WHERE id = ?");
     $stmt->bind_param("i", $id);
@@ -82,27 +93,25 @@ if (isset($_GET['geocode']) && isset($_GET['id'])) {
             $stmt = $conn->prepare("UPDATE kejadian_kebakaran SET latitude = ?, longitude = ? WHERE id = ?");
             $stmt->bind_param("ddi", $coords['lat'], $coords['lng'], $id);
             if ($stmt->execute()) {
-                $message = "Koordinat berhasil diperbarui! Lat: " . $coords['lat'] . ", Lng: " . $coords['lng'];
+                catatLog($conn, $user, "Melakukan geocoding satuan pada kejadian ID: $id");
+                $message = "Koordinat berhasil diperbarui! (Lat: " . $coords['lat'] . ", Lng: " . $coords['lng'] . ")";
                 $messageType = "success";
-                logAktivitas('Mengupdate koordinat kejadian ID: ' . $id, $_SESSION['user_id']);
             } else {
                 $message = "Gagal memperbarui koordinat!";
-                $messageType = "danger";
+                $messageType = "error";
             }
             $stmt->close();
         } else {
             $message = "Gagal mendapatkan koordinat dari alamat. Pastikan alamat lengkap dan benar!";
-            $messageType = "danger";
+            $messageType = "error";
         }
     }
-    $conn->close();
 }
 
 // ============================================================
 // HANDLE BULK GEOCODING
 // ============================================================
 if (isset($_GET['bulk_geocode'])) {
-    $conn = getConnection();
     $query = "SELECT id, alamat FROM kejadian_kebakaran WHERE latitude IS NULL OR latitude = 0 OR longitude IS NULL OR longitude = 0";
     $result = $conn->query($query);
     $updated = 0;
@@ -123,16 +132,16 @@ if (isset($_GET['bulk_geocode'])) {
             $failed++;
         }
     }
-    $conn->close();
+    
+    catatLog($conn, $user, "Melakukan Geocoding Massal. Berhasil: $updated data, Gagal: $failed data");
     
     $message = "Proses geocoding selesai! Berhasil: $updated, Gagal: $failed";
-    $messageType = $updated > 0 ? "success" : "danger";
+    $messageType = $updated > 0 ? "success" : "warning";
 }
 
 // ============================================================
 // GET INCIDENTS DENGAN FILTER
 // ============================================================
-$conn = getConnection();
 $query = "SELECT k.*, 
                  u1.username AS nama_penambah, 
                  u2.username AS nama_pengedit
@@ -194,6 +203,9 @@ $total_jiwa = array_sum(array_column($incidents, 'korban_jiwa'));
 $total_bangunan = array_sum(array_column($incidents, 'jumlah_bangunan'));
 $total_kk = array_sum(array_column($incidents, 'jumlah_KK'));
 
+// Mengambil jumlah kejadian BULAN INI dari database (sebelum filter jika Anda ingin bulan ini secara global, atau berdasarkan hasil query)
+$kejadian_bulan_ini = $conn->query("SELECT COUNT(*) as t FROM kejadian_kebakaran WHERE DATE_FORMAT(waktu, '%Y-%m') = DATE_FORMAT(NOW(), '%Y-%m')")->fetch_assoc()['t'];
+
 // Data untuk dropdown kelurahan
 $kelurahan_data = [
     'Banjarbaru Selatan' => ['Guntung Paikat', 'Kemuning', 'Loktabat Selatan', 'Sungai Besar'],
@@ -221,6 +233,11 @@ $conn->close();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- SweetAlert2 CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    
+    <!-- Leaflet CSS & MarkerCluster -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
@@ -237,14 +254,8 @@ $conn->close();
         
         /* Top Navbar */
         .top-navbar {
-            background: #FFFFFF;
-            border: 1px solid rgba(0,0,0,0.08);
-            border-radius: 20px;
-            padding: 12px 24px;
-            margin-bottom: 28px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.08); border-radius: 20px;
+            padding: 12px 24px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: center;
         }
         .page-title h2 { font-size: 20px; font-weight: 600; margin: 0; color: #1A1A1A; }
         .page-title p { font-size: 13px; margin: 4px 0 0 0; color: #666; }
@@ -252,27 +263,21 @@ $conn->close();
         .user-info .username { font-size: 14px; font-weight: 600; color: #1A1A1A; }
         .user-info .role { font-size: 11px; color: #F7B801; }
         .user-avatar {
-            width: 44px; height: 44px;
-            background: linear-gradient(135deg, #F7B801, #E5A800);
-            border-radius: 14px;
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; transition: transform 0.2s;
+            width: 44px; height: 44px; background: linear-gradient(135deg, #F7B801, #E5A800); border-radius: 14px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.2s;
         }
         .user-avatar:hover { transform: scale(1.05); }
         .user-avatar i { font-size: 22px; color: #1A1A1A; }
         
         .dropdown-menu-custom {
-            position: absolute; top: 80px; right: 32px;
-            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.1);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-            border-radius: 16px; padding: 12px 0; min-width: 180px;
+            position: absolute; top: 80px; right: 32px; background: #FFFFFF; border: 1px solid rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-radius: 16px; padding: 12px 0; min-width: 180px;
             display: none; z-index: 1000;
         }
         .dropdown-menu-custom.show { display: block; animation: fadeIn 0.2s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .dropdown-menu-custom a {
-            display: flex; align-items: center; gap: 12px;
-            padding: 12px 20px; text-decoration: none;
+            display: flex; align-items: center; gap: 12px; padding: 12px 20px; text-decoration: none;
             transition: all 0.2s; font-size: 13px; color: #333;
         }
         .dropdown-menu-custom a:hover { background: rgba(247,184,1,0.1); color: #F7B801; }
@@ -280,60 +285,31 @@ $conn->close();
 
         /* Filter Section */
         .filter-section {
-            background: #FFFFFF;
-            border: 1px solid rgba(0,0,0,0.08);
-            border-radius: 20px;
-            padding: 20px 24px;
-            margin-bottom: 28px;
+            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.08); border-radius: 20px;
+            padding: 20px 24px; margin-bottom: 28px;
         }
-        .form-label {
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #1A1A1A;
-        }
+        .form-label { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #1A1A1A; }
         .form-control, .form-select {
-            background: #F8F8F8;
-            border: 1px solid #E0E0E0;
-            color: #1A1A1A;
-            border-radius: 12px;
-            padding: 10px 14px;
-            font-size: 13px;
-            font-family: 'Poppins', sans-serif;
+            background: #F8F8F8; border: 1px solid #E0E0E0; color: #1A1A1A;
+            border-radius: 12px; padding: 10px 14px; font-size: 13px; font-family: 'Poppins', sans-serif;
         }
-        .form-control:focus, .form-select:focus {
-            border-color: #F7B801;
-            box-shadow: 0 0 0 3px rgba(247,184,1,0.1);
-            outline: none;
-        }
+        .form-control:focus, .form-select:focus { border-color: #F7B801; box-shadow: 0 0 0 3px rgba(247,184,1,0.1); outline: none; }
+        
         .btn-gold {
-            background: linear-gradient(135deg, #F7B801, #E5A800);
-            border: none;
-            padding: 10px 20px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 13px;
-            color: #1A1A1A;
-            transition: all 0.3s ease;
+            background: linear-gradient(135deg, #F7B801, #E5A800); border: none; padding: 10px 20px; border-radius: 12px;
+            font-weight: 600; font-size: 13px; color: #1A1A1A; transition: all 0.3s ease;
         }
         .btn-gold:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(247,184,1,0.3); color: #1A1A1A; }
 
         /* Stats Cards */
         .stat-card {
-            background: #FFFFFF;
-            border: 1px solid rgba(0,0,0,0.08);
-            border-radius: 20px;
-            padding: 20px;
-            transition: all 0.3s ease;
-            text-align: center;
+            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.08); border-radius: 20px; padding: 20px;
+            transition: all 0.3s ease; text-align: center;
         }
         .stat-card:hover { transform: translateY(-4px); border-color: #F7B801; box-shadow: 0 8px 20px rgba(0,0,0,0.06); }
         .stat-icon {
-            width: 55px; height: 55px;
-            background: rgba(247,184,1,0.1);
-            border-radius: 16px;
-            display: flex; align-items: center; justify-content: center;
-            margin: 0 auto 12px;
+            width: 55px; height: 55px; background: rgba(247,184,1,0.1); border-radius: 16px;
+            display: flex; align-items: center; justify-content: center; margin: 0 auto 12px;
         }
         .stat-icon i { font-size: 28px; color: #F7B801; }
         .stat-number { font-size: 32px; font-weight: 700; margin-bottom: 5px; color: #1A1A1A; }
@@ -341,39 +317,26 @@ $conn->close();
 
         /* Buttons */
         .btn-tambah {
-            background: linear-gradient(135deg, #F7B801, #E5A800);
-            border: none; padding: 10px 20px; border-radius: 12px;
-            font-weight: 600; font-size: 13px; color: #1A1A1A;
-            transition: all 0.3s ease; display: flex; align-items: center; gap: 8px;
+            background: linear-gradient(135deg, #F7B801, #E5A800); border: none; padding: 10px 20px; border-radius: 12px;
+            font-weight: 600; font-size: 13px; color: #1A1A1A; transition: all 0.3s ease; display: flex; align-items: center; gap: 8px;
         }
         .btn-tambah:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(247,184,1,0.3); }
 
         .card-custom {
-            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.08);
-            border-radius: 20px; overflow: hidden; margin-bottom: 28px;
+            background: #FFFFFF; border: 1px solid rgba(0,0,0,0.08); border-radius: 20px; overflow: hidden; margin-bottom: 28px;
         }
         .card-header-custom {
-            padding: 18px 24px; display: flex; justify-content: space-between;
-            align-items: center; background: #FFFFFF;
-            border-bottom: 1px solid rgba(0,0,0,0.08);
+            padding: 18px 24px; display: flex; justify-content: space-between; align-items: center;
+            background: #FFFFFF; border-bottom: 1px solid rgba(0,0,0,0.08);
         }
-        .card-header-custom h3 {
-            font-size: 16px; font-weight: 600; margin: 0;
-            display: flex; align-items: center; gap: 10px; color: #F7B801;
-        }
+        .card-header-custom h3 { font-size: 16px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 10px; color: #F7B801; }
 
         .map-container-page { height: 400px; border-radius: 20px; overflow: hidden; margin-bottom: 20px; border: 1px solid rgba(0,0,0,0.08); }
         #mapPage { height: 100%; width: 100%; }
 
         .table-custom { width: 100%; margin-bottom: 0; color: #1A1A1A; }
-        .table-custom thead th {
-            padding: 14px 16px; font-size: 13px; font-weight: 600;
-            background: #F8F8F8; color: #1A1A1A; border-bottom: 1px solid #E0E0E0;
-        }
-        .table-custom tbody td {
-            padding: 12px 16px; font-size: 13px; vertical-align: middle;
-            border-bottom: 1px solid #E0E0E0;
-        }
+        .table-custom thead th { padding: 14px 16px; font-size: 13px; font-weight: 600; background: #F8F8F8; color: #1A1A1A; border-bottom: 1px solid #E0E0E0; }
+        .table-custom tbody td { padding: 12px 16px; font-size: 13px; vertical-align: middle; border-bottom: 1px solid #E0E0E0; }
         .table-custom tbody tr:hover { background: rgba(247,184,1,0.03); }
 
         .foto-thumb { width: 50px; height: 50px; object-fit: cover; border-radius: 10px; background: #F5F5F5; display: flex; align-items: center; justify-content: center; }
@@ -385,18 +348,17 @@ $conn->close();
         .badge-status { background: rgba(247,184,1,0.15); color: #B8860B; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; }
         .badge-jiwa { background: rgba(220,53,69,0.1); color: #dc3545; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; }
         .badge-no-coord { background: rgba(255,193,7,0.15); color: #e6a000; padding: 2px 8px; border-radius: 12px; font-size: 10px; }
-        .badge-skala-besar { background: rgba(220,53,69,0.1); color: #dc3545; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; }
-        .badge-skala-kecil { background: rgba(40,167,69,0.1); color: #1e7e34; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; }
 
-        .btn-geocode { background: rgba(23,162,184,0.1); border: 1px solid rgba(23,162,184,0.3); padding: 4px 10px; border-radius: 8px; font-size: 11px; color: #17a2b8; transition: all 0.2s; text-decoration: none; }
+        /* Kerusakan Badges */
+        .badge-success-custom { background: rgba(40,167,69,0.1); color: #1e7e34; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; font-weight: 600; }
+        .badge-warning-custom { background: rgba(255,193,7,0.1); color: #d39e00; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; font-weight: 600; }
+        .badge-orange-custom { background: rgba(253,126,20,0.1); color: #fd7e14; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; font-weight: 600; }
+        .badge-danger-custom { background: rgba(220,53,69,0.1); color: #dc3545; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: inline-block; font-weight: 600; }
+
+        .btn-geocode { background: rgba(23,162,184,0.1); border: 1px solid rgba(23,162,184,0.3); padding: 4px 10px; border-radius: 8px; font-size: 11px; color: #17a2b8; transition: all 0.2s; text-decoration: none; cursor: pointer; }
         .btn-geocode:hover { background: rgba(23,162,184,0.2); color: #17a2b8; }
-        .btn-geocode-bulk { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.3); padding: 6px 14px; border-radius: 10px; font-size: 12px; color: #28a745; transition: all 0.2s; text-decoration: none; }
+        .btn-geocode-bulk { background: rgba(40,167,69,0.1); border: 1px solid rgba(40,167,69,0.3); padding: 6px 14px; border-radius: 10px; font-size: 12px; color: #28a745; transition: all 0.2s; text-decoration: none; cursor: pointer; }
         .btn-geocode-bulk:hover { background: rgba(40,167,69,0.2); color: #28a745; }
-
-        .alert-custom { border-radius: 14px; padding: 12px 18px; margin-bottom: 20px; animation: slideDown 0.3s ease; display: flex; align-items: center; gap: 12px; }
-        .alert-success { background: #d4edda; border-left: 4px solid #28a745; color: #155724; }
-        .alert-danger { background: #f8d7da; border-left: 4px solid #dc3545; color: #721c24; }
-        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
         /* Modal Floating */
         .modal-floating { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 2000; align-items: center; justify-content: center; }
@@ -413,8 +375,6 @@ $conn->close();
         .form-group { margin-bottom: 20px; }
         .form-label { font-size: 13px; font-weight: 600; margin-bottom: 8px; display: block; color: #1A1A1A; }
         .form-label .required { color: #F7B801; }
-        .form-control, .form-select { background: #F8F8F8; border: 1px solid #E0E0E0; color: #1A1A1A; border-radius: 12px; padding: 10px 14px; font-size: 13px; font-family: 'Poppins', sans-serif; }
-        .form-control:focus, .form-select:focus { border-color: #F7B801; box-shadow: 0 0 0 3px rgba(247,184,1,0.1); outline: none; }
 
         .map-container { height: 400px; border-radius: 16px; overflow: hidden; margin-bottom: 20px; }
         #map { height: 100%; width: 100%; }
@@ -432,16 +392,20 @@ $conn->close();
         .btn-cancel:hover { background: rgba(0,0,0,0.05); }
 
         .image-preview { width: 100px; height: 100px; object-fit: cover; border-radius: 12px; margin-top: 10px; }
-        .loading-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; border-radius: 28px; z-index: 20; }
-        .loading-overlay.show { display: flex; }
         .info-text { font-size: 12px; margin-top: 5px; color: #666; }
 
+        /* DataTables overrides */
         .dataTables_wrapper .dataTables_length select, .dataTables_wrapper .dataTables_filter input { background: #F8F8F8; border: 1px solid #E0E0E0; color: #1A1A1A; border-radius: 10px; padding: 6px 12px; }
         .dataTables_wrapper .dataTables_info, .dataTables_wrapper .dataTables_paginate { color: #666; }
         .dataTables_wrapper .dataTables_paginate .paginate_button { background: #F8F8F8 !important; border-color: #E0E0E0 !important; color: #1A1A1A !important; }
         .dataTables_wrapper .dataTables_paginate .paginate_button.current { background: #F7B801 !important; color: #1A1A1A !important; }
 
         #penyebab_lainnya_container { display: none; margin-top: 8px; }
+        
+        /* Custom SweetAlert */
+        .swal2-popup { font-family: 'Poppins', sans-serif !important; border-radius: 20px !important; }
+        .swal2-confirm { border-radius: 12px !important; font-weight: 600 !important; }
+        .swal2-cancel { border-radius: 12px !important; font-weight: 600 !important; }
 
         @media (max-width: 768px) {
             .main-content { margin-left: 0; padding: 16px; }
@@ -455,7 +419,6 @@ $conn->close();
 
 <body>
 
-    <!-- Sidebar sudah di-include -->
     <div class="main-content">
         <div class="top-navbar">
             <div class="page-title">
@@ -479,13 +442,6 @@ $conn->close();
                 <span>Logout</span>
             </a>
         </div>
-
-        <?php if ($message): ?>
-            <div class="alert-custom alert-<?= $messageType ?>">
-                <i class="fas <?= $messageType == 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle' ?>"></i>
-                <span><?= $message ?></span>
-            </div>
-        <?php endif; ?>
 
         <!-- FILTER SECTION -->
         <div class="filter-section">
@@ -530,6 +486,14 @@ $conn->close();
                     <div class="stat-label">Total Kejadian</div>
                 </div>
             </div>
+            <!-- CARD BARU: KEJADIAN BULAN INI (Diletakkan setelah Total Kejadian) -->
+            <div class="col-md-2 col-6">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-calendar-alt"></i></div>
+                    <div class="stat-number"><?= $kejadian_bulan_ini ?></div>
+                    <div class="stat-label">Bulan Ini</div>
+                </div>
+            </div>
             <div class="col-md-2 col-6">
                 <div class="stat-card">
                     <div class="stat-icon"><i class="fas fa-building"></i></div>
@@ -556,13 +520,6 @@ $conn->close();
                     <div class="stat-icon"><i class="fas fa-skull"></i></div>
                     <div class="stat-number"><?= $total_jiwa ?></div>
                     <div class="stat-label">Korban Jiwa</div>
-                </div>
-            </div>
-            <div class="col-md-2 col-6">
-                <div class="stat-card">
-                    <div class="stat-icon"><i class="fas fa-map-pin"></i></div>
-                    <div class="stat-number"><?= count($coordinates) ?></div>
-                    <div class="stat-label">Titik Koordinat</div>
                 </div>
             </div>
         </div>
@@ -600,9 +557,9 @@ $conn->close();
                 
                 <div class="d-flex gap-2 mt-3 flex-wrap">
                     <?php if ($no_coord > 0): ?>
-                        <a href="?bulk_geocode=1" class="btn-geocode-bulk" onclick="return confirm('Proses ini akan mencoba mencari koordinat untuk semua data yang belum memiliki koordinat. Lanjutkan?')">
+                        <button type="button" class="btn-geocode-bulk" onclick="confirmBulkGeocode()">
                             <i class="fas fa-sync-alt me-1"></i> Geocoding Massal (<?= $no_coord ?> data)
-                        </a>
+                        </button>
                     <?php endif; ?>
                     <button class="btn-geocode-bulk" onclick="location.reload()" style="background:rgba(23,162,184,0.1); border-color:rgba(23,162,184,0.3); color:#17a2b8;">
                         <i class="fas fa-redo me-1"></i> Refresh Peta
@@ -631,7 +588,7 @@ $conn->close();
                             <th>Kelurahan</th>
                             <th>Koordinat</th>
                             <th>Penyebab</th>
-                            <th>Skala</th>
+                            <th>Kerusakan</th>
                             <th>Korban</th>
                             <th>Ditambahkan Oleh</th>
                             <th>Aksi</th>
@@ -644,8 +601,13 @@ $conn->close();
                             if (!empty($row['penyebab_lainnya'])) {
                                 $penyebab = $row['penyebab_lainnya'];
                             }
-                            $skala = $row['skala'] ?? '-';
-                            $skalaClass = $skala == 'Besar' ? 'badge-skala-besar' : ($skala == 'Kecil' ? 'badge-skala-kecil' : '');
+                            
+                            $kerusakan = $row['kerusakan'] ?? '-';
+                            $kerusakanClass = '';
+                            if ($kerusakan == 'rusak ringan') $kerusakanClass = 'badge-success-custom';
+                            elseif ($kerusakan == 'rusak sedang') $kerusakanClass = 'badge-warning-custom';
+                            elseif ($kerusakan == 'rusak berat') $kerusakanClass = 'badge-orange-custom';
+                            elseif ($kerusakan == 'rusak total') $kerusakanClass = 'badge-danger-custom';
                         ?>
                             <tr>
                                 <td><?= $index + 1 ?></td>
@@ -669,17 +631,15 @@ $conn->close();
                                     <?php else: ?>
                                         <span class="badge-no-coord"><i class="fas fa-exclamation-circle me-1"></i> Tidak ada</span>
                                         <br>
-                                        <a href="?geocode=1&id=<?= $row['id'] ?>" class="btn-geocode mt-1" onclick="return confirm('Cari koordinat dari alamat ini?')">
+                                        <button type="button" class="btn-geocode mt-1 border-0" onclick="confirmGeocode(<?= $row['id'] ?>)">
                                             <i class="fas fa-sync-alt"></i> Geocode
-                                        </a>
+                                        </button>
                                     <?php endif; ?>
                                 </td>
                                 <td><span style="font-size:12px;"><?= htmlspecialchars($penyebab) ?></span></td>
                                 <td>
-                                    <?php if ($skala == 'Besar'): ?>
-                                        <span class="badge-skala-besar"><i class="fas fa-fire"></i> Besar</span>
-                                    <?php elseif ($skala == 'Kecil'): ?>
-                                        <span class="badge-skala-kecil"><i class="fas fa-fire-extinguisher"></i> Kecil</span>
+                                    <?php if ($kerusakanClass != ''): ?>
+                                        <span class="<?= $kerusakanClass ?>"><i class="fas fa-house-damage"></i> <?= ucwords($kerusakan) ?></span>
                                     <?php else: ?>
                                         <span style="color:#999;">-</span>
                                     <?php endif; ?>
@@ -701,7 +661,7 @@ $conn->close();
                                 </td>
                                 <td>
                                     <button class="btn-action btn-edit" data-id="<?= $row['id'] ?>"><i class="fas fa-edit"></i></button>
-                                    <a href="?delete=<?= $row['id'] ?>" class="btn-action danger" onclick="return confirm('Yakin hapus data ini?')"><i class="fas fa-trash"></i></a>
+                                    <button type="button" class="btn-action danger" onclick="confirmDelete(<?= $row['id'] ?>)"><i class="fas fa-trash"></i></button>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -719,9 +679,6 @@ $conn->close();
                 <button class="close-modal" id="closeModal"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-floating-body" style="position: relative;">
-                <div class="loading-overlay" id="loadingOverlay">
-                    <div class="spinner-border text-warning"></div>
-                </div>
                 <form id="kejadianForm" enctype="multipart/form-data">
                     <input type="hidden" name="id" id="editId">
 
@@ -748,7 +705,7 @@ $conn->close();
                         </div>
                     </div>
 
-                    <!-- Baris 2: Kelurahan & Skala -->
+                    <!-- Baris 2: Kelurahan & Kerusakan -->
                     <div class="row">
                         <div class="col-md-6">
                             <div class="form-group">
@@ -759,15 +716,17 @@ $conn->close();
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <div class="form-group">
-                                <label class="form-label"><i class="fas fa-fire"></i> Skala Kebakaran <span class="required">*</span></label>
-                                <select name="skala" id="skala" class="form-select" required>
-                                    <option value="">Pilih Skala</option>
-                                    <option value="Kecil">Kecil</option>
-                                    <option value="Besar">Besar</option>
-                                </select>
-                            </div>
-                        </div>
+    <div class="form-group">
+        <label class="form-label"><i class="fas fa-house-damage"></i> Tingkat Kerusakan</label>
+        <select name="kerusakan" id="kerusakan" class="form-select">
+            <option value="">Pilih Tingkat Kerusakan</option>
+            <option value="rusak ringan">Rusak Ringan</option>
+            <option value="rusak sedang">Rusak Sedang</option>
+            <option value="rusak berat">Rusak Berat</option>
+            <option value="rusak total">Rusak Total</option>
+        </select>
+    </div>
+</div>
                     </div>
 
                     <!-- MAP -->
@@ -931,8 +890,84 @@ $conn->close();
     <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
+        // ============================================================
+        // ALERT PHP DARI SERVER
+        // ============================================================
+        <?php if ($message): ?>
+            Swal.fire({
+                icon: '<?= $messageType == "success" ? "success" : "error" ?>',
+                title: '<?= $messageType == "success" ? "Berhasil!" : "Gagal!" ?>',
+                text: '<?= $message ?>',
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }
+            });
+        <?php endif; ?>
+
+        // ============================================================
+        // FUNGSI SWEETALERT UNTUK TOMBOL AKSI
+        // ============================================================
+        function confirmDelete(id) {
+            Swal.fire({
+                title: 'Yakin hapus data?',
+                text: "Data yang dihapus tidak dapat dikembalikan!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Ya, Hapus!',
+                cancelButtonText: 'Batal',
+                reverseButtons: true,
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm', cancelButton: 'swal2-cancel' }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+                    window.location.href = '?delete=' + id;
+                }
+            });
+        }
+
+        function confirmGeocode(id) {
+            Swal.fire({
+                title: 'Cari Koordinat?',
+                text: "Sistem akan mencari koordinat otomatis berdasarkan alamat yang tersimpan.",
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#F7B801',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Ya, Cari!',
+                cancelButtonText: 'Batal',
+                reverseButtons: true,
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm', cancelButton: 'swal2-cancel' }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({ title: 'Mencari Koordinat...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+                    window.location.href = '?geocode=1&id=' + id;
+                }
+            });
+        }
+
+        function confirmBulkGeocode() {
+            Swal.fire({
+                title: 'Geocoding Massal?',
+                text: "Sistem akan mencoba mencari koordinat untuk SEMUA data yang belum memilikinya. Proses ini mungkin memakan waktu.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#F7B801',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Ya, Lanjutkan!',
+                cancelButtonText: 'Batal',
+                reverseButtons: true,
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm', cancelButton: 'swal2-cancel' }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    Swal.fire({ title: 'Memproses Geocoding...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+                    window.location.href = '?bulk_geocode=1';
+                }
+            });
+        }
+
         // ============================================================
         // DATA KELURAHAN
         // ============================================================
@@ -1075,11 +1110,11 @@ $conn->close();
         document.getElementById('geocodeFromAddress')?.addEventListener('click', async function() {
             const address = document.getElementById('alamat').value;
             if (!address) {
-                alert('Masukkan alamat terlebih dahulu!');
+                Swal.fire({icon: 'warning', text: 'Masukkan alamat terlebih dahulu!', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 return;
             }
             
-            document.getElementById('loadingOverlay').classList.add('show');
+            Swal.fire({ title: 'Mencari Koordinat...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             
             try {
                 const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address + ', Banjarbaru, Kalimantan Selatan, Indonesia')}&limit=1&accept-language=id`;
@@ -1114,20 +1149,17 @@ $conn->close();
                         }
                     }
                     
-                    document.getElementById('loadingOverlay').classList.remove('show');
-                    alert('Koordinat berhasil ditemukan!');
+                    Swal.fire({icon: 'success', title: 'Berhasil', text: 'Koordinat berhasil ditemukan!', timer: 2000, showConfirmButton: false, customClass: {popup: 'swal2-popup'}});
                 } else {
-                    document.getElementById('loadingOverlay').classList.remove('show');
-                    alert('Alamat tidak ditemukan. Pastikan alamat lengkap dan benar!');
+                    Swal.fire({icon: 'error', title: 'Gagal', text: 'Alamat tidak ditemukan. Pastikan alamat lengkap dan benar!', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 }
             } catch (err) {
-                document.getElementById('loadingOverlay').classList.remove('show');
-                alert('Terjadi kesalahan: ' + err.message);
+                Swal.fire({icon: 'error', title: 'Error', text: 'Terjadi kesalahan: ' + err.message, customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
             }
         });
 
         async function reverseGeocode(lat, lng) {
-            document.getElementById('loadingOverlay').classList.add('show');
+            Swal.fire({ title: 'Menerjemahkan Lokasi...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=id&addressdetails=1`;
 
             try {
@@ -1136,10 +1168,10 @@ $conn->close();
                 if (data.display_name) {
                     document.getElementById('alamat').value = data.display_name;
                 }
+                Swal.close();
             } catch (err) {
                 console.log('Geocoding error:', err);
-            } finally {
-                document.getElementById('loadingOverlay').classList.remove('show');
+                Swal.close();
             }
         }
 
@@ -1153,7 +1185,7 @@ $conn->close();
             const lat = parseFloat(document.getElementById('latitude').value);
             const lng = parseFloat(document.getElementById('longitude').value);
             if (isNaN(lat) || isNaN(lng)) {
-                alert('Masukkan latitude dan longitude yang valid!');
+                Swal.fire({icon: 'warning', text: 'Masukkan latitude dan longitude yang valid!', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 return;
             }
             map.setView([lat, lng], 16);
@@ -1163,7 +1195,7 @@ $conn->close();
 
         function getCurrentLocation() {
             if (navigator.geolocation) {
-                document.getElementById('loadingOverlay').classList.add('show');
+                Swal.fire({ title: 'Mencari Lokasi Anda...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
                 navigator.geolocation.getCurrentPosition(function(position) {
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
@@ -1171,13 +1203,11 @@ $conn->close();
                     marker.setLatLng([lat, lng]);
                     updateCoordinatesFromLatLng(lat, lng);
                     reverseGeocode(lat, lng);
-                    document.getElementById('loadingOverlay').classList.remove('show');
                 }, function(error) {
-                    alert('Gagal mendapatkan lokasi: ' + error.message);
-                    document.getElementById('loadingOverlay').classList.remove('show');
+                    Swal.fire({icon: 'error', title: 'Gagal', text: 'Gagal mendapatkan lokasi: ' + error.message, customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 });
             } else {
-                alert('Browser tidak mendukung geolocation');
+                Swal.fire({icon: 'error', text: 'Browser tidak mendukung geolocation', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
             }
         }
 
@@ -1239,12 +1269,15 @@ $conn->close();
         document.getElementById('doSearch').addEventListener('click', async function() {
             const query = document.getElementById('searchAddress').value;
             if (!query) {
-                alert('Masukkan alamat yang ingin dicari!');
+                Swal.fire({icon: 'warning', text: 'Masukkan alamat yang ingin dicari!', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 return;
             }
-            document.getElementById('loadingOverlay').classList.add('show');
+            
+            Swal.fire({ title: 'Mencari Alamat...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+            
             const results = await searchAddress(query);
-            document.getElementById('loadingOverlay').classList.remove('show');
+            Swal.close();
+            
             const resultsDiv = document.getElementById('searchResults');
             if (results.length === 0) {
                 resultsDiv.innerHTML = '<div class="alert alert-danger">Tidak ditemukan hasil</div>';
@@ -1280,9 +1313,9 @@ $conn->close();
                     type: 'GET',
                     data: { id: id },
                     dataType: 'json',
-                    success: function(data) {
-                        if (data.success) {
-                            const d = data.data;
+                    success: function(response) {
+                        if (response.success) {
+                            const d = response.data;
                             document.getElementById('editId').value = d.id;
                             document.getElementById('waktu').value = d.waktu.replace(' ', 'T').slice(0, 16);
                             document.getElementById('alamat').value = d.alamat;
@@ -1294,7 +1327,7 @@ $conn->close();
                             document.getElementById('jumlah_individu').value = d.jumlah_individu || 0;
                             document.getElementById('korban_luka').value = d.korban_luka || 0;
                             document.getElementById('korban_jiwa').value = d.korban_jiwa || 0;
-                            document.getElementById('skala').value = d.skala || '';
+                            document.getElementById('kerusakan').value = d.kerusakan || '';
                             document.getElementById('keterangan').value = d.keterangan || '';
                             
                             // Penyebab
@@ -1338,7 +1371,7 @@ $conn->close();
         });
 
         // ============================================================
-        // SUBMIT FORM
+        // SUBMIT FORM (SIMPAN / UPDATE DATA AJAX)
         // ============================================================
         $('#kejadianForm').on('submit', function(e) {
             e.preventDefault();
@@ -1347,12 +1380,13 @@ $conn->close();
             const penyebab = document.getElementById('penyebab').value;
             const penyebabLainnya = document.getElementById('penyebab_lainnya').value;
             if (penyebab === 'Lainnya' && !penyebabLainnya.trim()) {
-                alert('Silakan tulis penyebab kebakaran pada kolom yang tersedia!');
+                Swal.fire({icon: 'warning', text: 'Silakan tulis penyebab kebakaran pada kolom yang tersedia!', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 document.getElementById('penyebab_lainnya').focus();
                 return;
             }
             
-            document.getElementById('loadingOverlay').classList.add('show');
+            Swal.fire({ title: 'Menyimpan Data...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+            
             const formData = new FormData(this);
             $.ajax({
                 url: 'save_data.php',
@@ -1362,16 +1396,21 @@ $conn->close();
                 contentType: false,
                 dataType: 'json',
                 success: function(response) {
-                    document.getElementById('loadingOverlay').classList.remove('show');
                     if (response.success) {
-                        location.reload();
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Berhasil!',
+                            text: 'Data telah tersimpan.',
+                            showConfirmButton: false,
+                            timer: 1500,
+                            customClass: {popup: 'swal2-popup'}
+                        }).then(() => location.reload());
                     } else {
-                        alert('Error: ' + response.message);
+                        Swal.fire({icon: 'error', title: 'Error', text: response.message, customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                     }
                 },
                 error: function() {
-                    document.getElementById('loadingOverlay').classList.remove('show');
-                    alert('Terjadi kesalahan!');
+                    Swal.fire({icon: 'error', title: 'Terjadi Kesalahan', text: 'Gagal menghubungi server.', customClass: {popup: 'swal2-popup', confirmButton: 'swal2-confirm'}});
                 }
             });
         });

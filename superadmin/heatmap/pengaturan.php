@@ -9,6 +9,22 @@ checkRole(['super_admin']);
 
 $user = getCurrentUser();
 
+// ============================================================
+// FUNGSI PENCATATAN LOG AKTIVITAS (Sesuai Struktur Database)
+// ============================================================
+if (!function_exists('catatLog')) {
+    function catatLog($conn, $user, $aktivitas) {
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $nama = isset($user['nama']) ? $user['nama'] : $user['username'];
+        
+        $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssss", $user['id'], $user['username'], $user['role'], $nama, $aktivitas, $ip_address, $user_agent);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
 // Ambil pengaturan heatmap
 $heatmapSettings = getHeatmapSettings();
 
@@ -30,11 +46,6 @@ $kecamatanStats = $conn->query("
     GROUP BY kecamatan
 ");
 
-$conn->close();
-
-// Include sidebar dari folder includes
-include __DIR__ . '/../../includes/sidebar.php';
-
 // Proses update pengaturan
 $success = '';
 $error = '';
@@ -51,20 +62,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } elseif ($intensity < 10 || $intensity > 100) {
         $error = 'Intensitas harus antara 10-100%';
     } else {
-        $conn = getConnection();
         $stmt = $conn->prepare("INSERT INTO heatmap_settings (radius, blur, intensity) VALUES (?, ?, ?)");
         $stmt->bind_param("iii", $radius, $blur, $intensity);
 
         if ($stmt->execute()) {
+            catatLog($conn, $user, "Memperbarui konfigurasi Heatmap (Radius: $radius, Blur: $blur, Intensitas: $intensity%)");
             $success = 'Pengaturan heatmap berhasil disimpan!';
             $heatmapSettings = getHeatmapSettings();
         } else {
             $error = 'Gagal menyimpan pengaturan';
         }
         $stmt->close();
-        $conn->close();
     }
 }
+
+$conn->close();
+
+// Include sidebar dari folder includes
+include __DIR__ . '/../../includes/sidebar.php';
 ?>
 
 <!DOCTYPE html>
@@ -79,10 +94,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- SweetAlert2 & Leaflet CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
     <style>
-        /* ... semua style tetap sama ... */
         * {
             margin: 0;
             padding: 0;
@@ -487,39 +504,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             color: #B8860B;
         }
 
-        .alert-custom {
-            border-radius: 14px;
-            padding: 14px 18px;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: slideDown 0.3s ease;
-        }
-
-        .alert-success-custom {
-            background: rgba(40, 167, 69, 0.1);
-            border-left: 4px solid #28a745;
-            color: #155724;
-        }
-
-        .alert-danger-custom {
-            background: rgba(220, 53, 69, 0.1);
-            border-left: 4px solid #dc3545;
-            color: #721c24;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
         .preview-overlay {
             position: absolute;
             top: 0;
@@ -537,6 +521,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         .preview-overlay.show {
             display: flex;
+        }
+
+        /* Custom SweetAlert */
+        .swal2-popup {
+            font-family: 'Poppins', sans-serif !important;
+            border-radius: 20px !important;
+        }
+        .swal2-confirm {
+            background: linear-gradient(135deg, #F7B801, #E5A800) !important;
+            color: #1A1A1A !important;
+            border-radius: 12px !important;
+            font-weight: 600 !important;
         }
 
         hr {
@@ -589,21 +585,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </a>
         </div>
 
-        <!-- Alert Messages -->
-        <?php if ($success): ?>
-            <div class="alert-custom alert-success-custom mb-4">
-                <i class="fas fa-check-circle"></i>
-                <span><?= $success ?></span>
-            </div>
-        <?php endif; ?>
-
-        <?php if ($error): ?>
-            <div class="alert-custom alert-danger-custom mb-4">
-                <i class="fas fa-exclamation-triangle"></i>
-                <span><?= $error ?></span>
-            </div>
-        <?php endif; ?>
-
         <!-- Stats Cards -->
         <div class="row g-4 mb-4">
             <div class="col-md-3 col-sm-6">
@@ -636,7 +617,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="stat-card">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
-                            <div class="stat-number"><?= $heatmapSettings['radius'] ?? 25 ?></div>
+                            <div class="stat-number" id="cardRadius"><?= $heatmapSettings['radius'] ?? 25 ?></div>
                             <div class="stat-label">Radius (px)</div>
                         </div>
                         <div class="stat-icon">
@@ -649,7 +630,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <div class="stat-card">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
-                            <div class="stat-number"><?= $heatmapSettings['intensity'] ?? 70 ?>%</div>
+                            <div class="stat-number" id="cardIntensity"><?= $heatmapSettings['intensity'] ?? 70 ?>%</div>
                             <div class="stat-label">Intensitas</div>
                         </div>
                         <div class="stat-icon">
@@ -739,7 +720,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 <button type="button" class="btn-info-custom" onclick="previewHeatmap()">
                                     <i class="fas fa-eye"></i> Preview Heatmap
                                 </button>
-                                <button type="submit" class="btn-gold">
+                                <button type="submit" class="btn-gold" id="btnSimpan">
                                     <i class="fas fa-save"></i> Simpan Pengaturan
                                 </button>
                                 <button type="button" class="btn-outline-gold" onclick="resetToDefault()">
@@ -868,6 +849,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <!-- ============================================ -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     <!-- 1. Leaflet JS dulu -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -877,16 +859,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     <script>
         // ============================================
-        // CEK APAKAH L.heatLayer TERSEDIA
-        // ============================================
-        console.log('Leaflet version:', L.version);
-        console.log('L.heatLayer available:', typeof L.heatLayer !== 'undefined');
+        // ALERT PHP DARI SERVER
+        // ============================================================
+        <?php if ($success): ?>
+            Swal.fire({
+                icon: 'success',
+                title: 'Berhasil!',
+                text: '<?= $success ?>',
+                showConfirmButton: false,
+                timer: 2000,
+                customClass: { popup: 'swal2-popup' }
+            });
+        <?php endif; ?>
+
+        <?php if ($error): ?>
+            Swal.fire({
+                icon: 'error',
+                title: 'Gagal!',
+                text: '<?= $error ?>',
+                customClass: { popup: 'swal2-popup', confirmButton: 'swal2-confirm' }
+            });
+        <?php endif; ?>
+
+        // Menampilkan Loader saat tombol simpan diklik
+        document.getElementById('heatmapForm').addEventListener('submit', function() {
+            Swal.fire({
+                title: 'Menyimpan Pengaturan...',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); },
+                customClass: { popup: 'swal2-popup' }
+            });
+        });
 
         // ============================================
         // INITIALIZATION & VARIABLES
         // ============================================
-
-        // Initialize map
         const map = L.map('heatmapPreview').setView([-3.468, 114.832], 12);
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -897,9 +904,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         let kdeHeatmapLayer = null;
         let markers = [];
-        let kdeData = null;
+        let cachedGridData = null; // Menyimpan data matriks PHP agar tidak request berulang
 
-        // Data kejadian dari PHP
         const kejadianData = <?php
             if ($kejadian && $kejadian->num_rows > 0) {
                 mysqli_data_seek($kejadian, 0);
@@ -922,126 +928,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         ?>;
 
         // ============================================
-        // CORE KDE FUNCTIONS
+        // CORE KDE FUNCTIONS (API FETCH)
         // ============================================
 
-        function calculateStdDev(array) {
-            const n = array.length;
-            if (n < 2) return 0;
-            const mean = array.reduce((a, b) => a + b, 0) / n;
-            const variance = array.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / n;
-            return Math.sqrt(variance);
-        }
-
-        function euclideanDistance(lat1, lng1, lat2, lng2) {
-            return Math.sqrt(Math.pow(lat1 - lat2, 2) + Math.pow(lng1 - lng2, 2));
-        }
-
-        function gaussianKernel(distance, bandwidth) {
-            const sigma = bandwidth / 2.0;
-            if (sigma === 0) return 0;
-            return (1 / (2 * Math.PI * Math.pow(sigma, 2))) * 
-                   Math.exp(-Math.pow(distance, 2) / (2 * Math.pow(sigma, 2)));
-        }
-
-        function calculateKDE(points, lat, lng, bandwidth) {
-            let density = 0;
-            const n = points.length;
-            if (n === 0) return 0;
-
-            points.forEach(point => {
-                const distance = euclideanDistance(lat, lng, point.lat, point.lng);
-                density += gaussianKernel(distance, bandwidth);
-            });
-
-            return density / n;
-        }
-
-        function generateKDEGrid(points, bounds, gridSize, bandwidth) {
-            const grid = [];
-            const stepLat = (bounds.maxLat - bounds.minLat) / gridSize;
-            const stepLng = (bounds.maxLng - bounds.minLng) / gridSize;
-
-            let lat = bounds.minLat;
-            for (let i = 0; i < gridSize; i++) {
-                const row = [];
-                let lng = bounds.minLng;
-                for (let j = 0; j < gridSize; j++) {
-                    const density = calculateKDE(points, lat, lng, bandwidth);
-                    row.push(density);
-                    lng += stepLng;
-                }
-                grid.push(row);
-                lat += stepLat;
-            }
-
-            return grid;
-        }
-
-        function normalizeGrid(grid) {
-            const flat = grid.flat();
-            const minVal = Math.min(...flat);
-            const maxVal = Math.max(...flat);
-
-            if (maxVal === minVal) return grid.map(row => row.map(() => 0));
-
-            return grid.map(row =>
-                row.map(value => (value - minVal) / (maxVal - minVal))
-            );
-        }
-
-        function createKDEHeatmap(gridData, bounds, gridSize, radius, blur) {
-            const points = [];
-            const stepLat = (bounds.maxLat - bounds.minLat) / gridSize;
-            const stepLng = (bounds.maxLng - bounds.minLng) / gridSize;
-
-            let lat = bounds.minLat;
-            for (let i = 0; i < gridSize; i++) {
-                let lng = bounds.minLng;
-                for (let j = 0; j < gridSize; j++) {
-                    const value = gridData[i]?.[j] || 0;
-                    if (value > 0.01) {
-                        points.push([lat, lng, value]);
-                    }
-                    lng += stepLng;
-                }
-                lat += stepLat;
-            }
-
-            if (kdeHeatmapLayer) {
-                map.removeLayer(kdeHeatmapLayer);
-            }
-
-            // Gunakan L.heatLayer dengan aman
-            if (typeof L.heatLayer === 'function') {
-                kdeHeatmapLayer = L.heatLayer(points, {
-                    radius: radius || 25,
-                    blur: blur || 15,
-                    maxZoom: 18,
-                    gradient: {
-                        0.0: '#00cc44',
-                        0.2: '#88cc00',
-                        0.4: '#ffcc00',
-                        0.6: '#ff8800',
-                        0.8: '#ff4400',
-                        1.0: '#ff0000'
-                    },
-                    max: 1.0
-                }).addTo(map);
-            } else {
-                console.error('L.heatLayer tidak tersedia!');
-                showNotification('Library heatmap tidak terload dengan benar', 'error');
-            }
-        }
-
-        function initKDEHeatmap(radius, blur, intensity) {
+        async function fetchServerKDE() {
             const loading = document.getElementById('previewLoading');
             if (loading) loading.classList.add('show');
 
             try {
-                if (kejadianData.length === 0) {
+                if (kejadianData.length < 2) {
+                    // showNotification diubah ke Swal jika mau, tapi biarkan saja format awal untuk alert non-blocking
                     if (loading) loading.classList.remove('show');
-                    showNotification('Tidak ada data kejadian', 'warning');
                     return;
                 }
 
@@ -1056,80 +953,134 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     maxLng: Math.max(...lngs) + padding
                 };
 
-                const n = kejadianData.length;
-                const stdLat = calculateStdDev(lats);
-                const stdLng = calculateStdDev(lngs);
-                const std = (stdLat + stdLng) / 2;
-                const bandwidth = 1.06 * std * Math.pow(n, -1 / 5);
-
-                const gridSize = 50;
-                const grid = generateKDEGrid(kejadianData, bounds, gridSize, bandwidth);
-                const normalizedGrid = normalizeGrid(grid);
-
-                kdeData = {
-                    grid: normalizedGrid,
-                    bounds: bounds,
-                    gridSize: gridSize,
-                    bandwidth: bandwidth,
-                    totalPoints: n
-                };
-
-                markers.forEach(m => map.removeLayer(m));
-                markers = [];
-
-                kejadianData.forEach(data => {
-                    const marker = L.circleMarker([data.lat, data.lng], {
-                        radius: 5,
-                        fillColor: '#F7B801',
-                        color: '#FFFFFF',
-                        weight: 1.5,
-                        fillOpacity: 0.8
-                    }).bindPopup(`
-                        <div style="font-family: 'Poppins', sans-serif;">
-                            <strong style="color: #F7B801;">Kejadian Kebakaran</strong><br>
-                            <small>${new Date(data.waktu).toLocaleString('id-ID')}</small><br>
-                            ${data.alamat ? (data.alamat.substring(0, 80) + (data.alamat.length > 80 ? '...' : '')) : '-'}<br>
-                            <em>${data.kecamatan || '-'}</em>
-                        </div>
-                    `);
-                    marker.addTo(map);
-                    markers.push(marker);
+                const params = new URLSearchParams({
+                    minLat: bounds.minLat,
+                    maxLat: bounds.maxLat,
+                    minLng: bounds.minLng,
+                    maxLng: bounds.maxLng,
+                    gridSize: 50
                 });
 
-                createKDEHeatmap(normalizedGrid, bounds, gridSize, radius, blur);
-                updateKDEStatistics(kdeData);
+                // Request ke API backend
+                const response = await fetch(`kde_heatmap.php?${params.toString()}`);
+                const data = await response.json();
 
-                const latLngs = kejadianData.map(d => [d.lat, d.lng]);
-                map.fitBounds(latLngs, { padding: [50, 50] });
+                if (data.status === 'success') {
+                    cachedGridData = {
+                        grid: data.grid_data,
+                        bounds: data.bounds,
+                        gridSize: data.grid_size,
+                        totalPoints: data.total_points,
+                        bandwidth: data.bandwidth
+                    };
 
-                showNotification(
-                    `✅ KDE berhasil dimuat: ${kdeData.totalPoints} titik data, bandwidth ${kdeData.bandwidth.toFixed(6)}°`,
-                    'success'
-                );
+                    drawMarkers();
+                    updateKDEStatistics(cachedGridData);
+                    
+                    const latLngs = kejadianData.map(d => [d.lat, d.lng]);
+                    map.fitBounds(latLngs, { padding: [50, 50] });
 
+                    // Eksekusi visual
+                    renderHeatmapLayer();
+                } else {
+                    console.error('Error Server KDE:', data.message);
+                }
             } catch (error) {
-                console.error('KDE Error:', error);
-                showNotification('❌ Error memuat KDE: ' + error.message, 'error');
+                console.error('KDE Fetch Error:', error);
             } finally {
                 if (loading) loading.classList.remove('show');
             }
         }
 
+        function drawMarkers() {
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+
+            kejadianData.forEach(data => {
+                const marker = L.circleMarker([data.lat, data.lng], {
+                    radius: 5,
+                    fillColor: '#F7B801',
+                    color: '#FFFFFF',
+                    weight: 1.5,
+                    fillOpacity: 0.8
+                }).bindPopup(`
+                    <div style="font-family: 'Poppins', sans-serif;">
+                        <strong style="color: #F7B801;">Kejadian Kebakaran</strong><br>
+                        <small>${new Date(data.waktu).toLocaleString('id-ID')}</small><br>
+                        ${data.alamat ? (data.alamat.substring(0, 80) + (data.alamat.length > 80 ? '...' : '')) : '-'}<br>
+                        <em>${data.kecamatan || '-'}</em>
+                    </div>
+                `);
+                marker.addTo(map);
+                markers.push(marker);
+            });
+        }
+
+        // Fungsi yang hanya mengubah visual Leaflet saja, tanpa request ke API berulang kali
+        function renderHeatmapLayer() {
+            if (!cachedGridData) return;
+
+            const radius = parseInt(document.getElementById('radiusSlider').value);
+            const blur = parseInt(document.getElementById('blurSlider').value);
+            const intensity = parseInt(document.getElementById('intensitySlider').value);
+            const intensityMultiplier = intensity / 100; // Ubah persen ke desimal
+
+            const grid = cachedGridData.grid;
+            const bounds = cachedGridData.bounds;
+            const gridSize = cachedGridData.gridSize;
+
+            const stepLat = (bounds.maxLat - bounds.minLat) / gridSize;
+            const stepLng = (bounds.maxLng - bounds.minLng) / gridSize;
+
+            const heatmapData = [];
+            let currentLat = bounds.minLat;
+            
+            for (let i = 0; i < gridSize; i++) {
+                let currentLng = bounds.minLng;
+                for (let j = 0; j < gridSize; j++) {
+                    const value = grid[i][j];
+                    if (value > 0.01) {
+                        // Kalikan bobot nilai dengan slider intensitas
+                        heatmapData.push([currentLat, currentLng, value * intensityMultiplier]);
+                    }
+                    currentLng += stepLng;
+                }
+                currentLat += stepLat;
+            }
+
+            if (kdeHeatmapLayer) map.removeLayer(kdeHeatmapLayer);
+
+            kdeHeatmapLayer = L.heatLayer(heatmapData, {
+                radius: radius,
+                blur: blur,
+                maxZoom: 18,
+                max: 1.0,
+                gradient: {
+                    0.0: '#00cc44', 0.2: '#88cc00', 0.4: '#ffcc00', 
+                    0.6: '#ff8800', 0.8: '#ff4400', 1.0: '#ff0000'
+                }
+            }).addTo(map);
+        }
+
         // ============================================
         // UI FUNCTIONS
         // ============================================
-
         function updateSliderDisplay() {
             document.getElementById('radiusDisplay').textContent = document.getElementById('radiusSlider').value;
             document.getElementById('blurDisplay').textContent = document.getElementById('blurSlider').value;
             document.getElementById('intensityDisplay').textContent = document.getElementById('intensitySlider').value + '%';
+            
+            document.getElementById('cardRadius').textContent = document.getElementById('radiusSlider').value;
+            document.getElementById('cardIntensity').textContent = document.getElementById('intensitySlider').value + '%';
         }
 
         function previewHeatmap() {
-            const radius = parseInt(document.getElementById('radiusSlider').value);
-            const blur = parseInt(document.getElementById('blurSlider').value);
-            const intensity = parseInt(document.getElementById('intensitySlider').value);
-            initKDEHeatmap(radius, blur, intensity);
+            // Jika data grid server belum ditarik, tarik dulu
+            if (!cachedGridData) {
+                fetchServerKDE();
+            } else {
+                renderHeatmapLayer(); // Jika sudah ada, cukup refresh warna dan radius
+            }
         }
 
         function resetToDefault() {
@@ -1152,23 +1103,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         function updateKDEStatistics(data) {
-            if (!data) return;
-
             let statsDiv = document.getElementById('kdeStats');
             if (!statsDiv) {
                 statsDiv = document.createElement('div');
                 statsDiv.id = 'kdeStats';
                 statsDiv.className = 'info-box mt-3';
                 statsDiv.style.cssText = 'border-left-color: #F7B801;';
-
                 const container = document.querySelector('.card-body-custom');
-                if (container) {
-                    container.appendChild(statsDiv);
-                }
+                if (container) container.appendChild(statsDiv);
             }
 
             statsDiv.innerHTML = `
-                <h6><i class="fas fa-calculator me-1" style="color: #F7B801;"></i> Statistik KDE</h6>
+                <h6><i class="fas fa-calculator me-1" style="color: #F7B801;"></i> Statistik KDE Server</h6>
                 <p style="font-size: 12px; margin-bottom: 4px;">
                     <strong>Total Titik:</strong> ${data.totalPoints} kejadian
                 </p>
@@ -1179,55 +1125,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <strong>Grid Size:</strong> ${data.gridSize}x${data.gridSize}
                 </p>
                 <p style="font-size: 12px; margin-bottom: 0;">
-                    <strong>Kernel:</strong> Gaussian 2D
+                    <strong>Engine:</strong> KDE PHP Backend
                 </p>
             `;
-        }
-
-        function showNotification(message, type = 'info') {
-            const colors = {
-                success: '#28a745',
-                warning: '#ffc107',
-                error: '#dc3545',
-                info: '#17a2b8'
-            };
-
-            let notification = document.getElementById('kdeNotification');
-            if (!notification) {
-                notification = document.createElement('div');
-                notification.id = 'kdeNotification';
-                notification.style.cssText = `
-                    position: fixed;
-                    bottom: 20px;
-                    right: 20px;
-                    padding: 12px 20px;
-                    border-radius: 12px;
-                    color: white;
-                    font-family: 'Poppins', sans-serif;
-                    font-size: 13px;
-                    z-index: 9999;
-                    max-width: 400px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                    animation: slideIn 0.3s ease;
-                    display: none;
-                `;
-                document.body.appendChild(notification);
-            }
-
-            notification.style.background = colors[type] || colors.info;
-            notification.textContent = message;
-            notification.style.display = 'block';
-
-            clearTimeout(notification._timeout);
-            notification._timeout = setTimeout(() => {
-                notification.style.display = 'none';
-            }, 5000);
         }
 
         // ============================================
         // EVENT LISTENERS
         // ============================================
-
         document.getElementById('userAvatar').addEventListener('click', function(e) {
             e.stopPropagation();
             document.getElementById('dropdownMenu').classList.toggle('show');
@@ -1242,24 +1147,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             slider.addEventListener('input', function() {
                 updateSliderDisplay();
                 clearTimeout(previewTimeout);
-                previewTimeout = setTimeout(() => {
-                    previewHeatmap();
-                }, 500);
+                // Hanya render ulang visual, bukan hitung ulang matematika API
+                previewTimeout = setTimeout(() => renderHeatmapLayer(), 200); 
             });
         });
 
         // ============================================
         // INITIALIZATION ON PAGE LOAD
         // ============================================
-
         document.addEventListener('DOMContentLoaded', function() {
-            if (kejadianData.length > 0) {
-                setTimeout(() => {
-                    const radius = parseInt(document.getElementById('radiusSlider')?.value || 25);
-                    const blur = parseInt(document.getElementById('blurSlider')?.value || 15);
-                    const intensity = parseInt(document.getElementById('intensitySlider')?.value || 70);
-                    initKDEHeatmap(radius, blur, intensity);
-                }, 500);
+            if (kejadianData.length >= 2) {
+                fetchServerKDE(); 
             }
         });
     </script>

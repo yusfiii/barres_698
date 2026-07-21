@@ -252,6 +252,15 @@ $role = isset($_SESSION['role']) ? $_SESSION['role'] : '';
                     <span>Data BPK</span>
                 </a>
             </li>
+            
+            <!-- MENU BARU: DATA SARPRAS -->
+            <li class="nav-item">
+                <a href="/barres_698/superadmin/sarpras/" class="nav-link <?= strpos($current_url, '/superadmin/sarpras/') !== false ? 'active' : '' ?>">
+                    <i class="fas fa-toolbox"></i>
+                    <span>Data Sarpras</span>
+                </a>
+            </li>
+
             <li class="nav-item">
                 <a href="/barres_698/superadmin/hydran/" class="nav-link <?= strpos($current_url, '/superadmin/hydran/') !== false ? 'active' : '' ?>">
                     <span class="material-symbols-outlined">fire_hydrant</span>
@@ -276,13 +285,12 @@ $role = isset($_SESSION['role']) ? $_SESSION['role'] : '';
                     <span>Laporan</span>
                 </a>
             </li>
-            <!-- Di dalam menu superadmin, tambahkan setelah Data Akun atau sebelum Laporan -->
-<li class="nav-item">
-    <a href="/barres_698/superadmin/log-aktivitas/" class="nav-link <?= strpos($current_page, 'log-aktivitas') !== false ? 'active' : '' ?>">
-        <i class="fas fa-history"></i>
-        <span>Log Aktivitas</span>
-    </a>
-</li>
+            <li class="nav-item">
+                <a href="/barres_698/superadmin/log-aktivitas/" class="nav-link <?= strpos($current_url, '/superadmin/log-aktivitas/') !== false ? 'active' : '' ?>">
+                    <i class="fas fa-history"></i>
+                    <span>Log Aktivitas</span>
+                </a>
+            </li>
         <?php else: ?>
             <!-- MENU ADMIN BPK -->
             <li class="nav-item">

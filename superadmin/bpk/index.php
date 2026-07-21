@@ -12,6 +12,29 @@ $kecamatan_filter = isset($_GET['kecamatan']) ? $_GET['kecamatan'] : '';
 
 $conn = getConnection();
 
+// ============================================================
+// FUNGSI PENCATATAN LOG AKTIVITAS (Sesuai Struktur Database)
+// ============================================================
+if (!function_exists('catatLog')) {
+    function catatLog($conn, $user, $aktivitas) {
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $nama = isset($user['nama']) ? $user['nama'] : $user['username'];
+        
+        $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssss", $user['id'], $user['username'], $user['role'], $nama, $aktivitas, $ip_address, $user_agent);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
+// Catat log jika user melakukan pencarian atau pemfilteran
+if (!empty($search)) {
+    catatLog($conn, $user, "Mencari data BPK dengan kata kunci: " . $search);
+} elseif (!empty($kecamatan_filter)) {
+    catatLog($conn, $user, "Memfilter data BPK berdasarkan kecamatan: " . $kecamatan_filter);
+}
+
 // Query BPK
 $query = "SELECT b.*, 
           (SELECT COUNT(*) FROM anggota WHERE bpk_id = b.id) as total_anggota,
@@ -77,10 +100,18 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Library SweetAlert2 -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Penambahan Library Marker Clustering CSS & JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -299,7 +330,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
             border: 1px solid rgba(0,0,0,0.1);
             cursor: crosshair;
         }
-        .coordinate-input { background: #F8F8F8; font-weight: 600; cursor: pointer; }
+        .coordinate-input { background: #FFFFFF; font-weight: 600; cursor: text; }
         .detail-label {
             font-weight: 600; font-size: 12px; text-transform: uppercase;
             letter-spacing: 0.5px; color: #F7B801;
@@ -552,11 +583,13 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label required">Latitude</label>
-                                        <input type="text" name="latitude" class="form-control coordinate-input" id="latTambah" placeholder="Klik pada peta..." readonly required>
+                                        <!-- readonly DIHAPUS, DITAMBAHKAN ONINPUT -->
+                                        <input type="text" name="latitude" class="form-control coordinate-input" id="latTambah" placeholder="Ketik atau klik peta..." oninput="updateMarkerTambah()" required>
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label required">Longitude</label>
-                                        <input type="text" name="longitude" class="form-control coordinate-input" id="lngTambah" placeholder="Klik pada peta..." readonly required>
+                                        <!-- readonly DIHAPUS, DITAMBAHKAN ONINPUT -->
+                                        <input type="text" name="longitude" class="form-control coordinate-input" id="lngTambah" placeholder="Ketik atau klik peta..." oninput="updateMarkerTambah()" required>
                                     </div>
                                 </div>
                                 <div class="row">
@@ -576,10 +609,10 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                                 </div>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label"><i class="fas fa-map-marker-alt me-1"></i>Klik pada peta untuk memilih lokasi BPK</label>
+                                <label class="form-label"><i class="fas fa-map-marker-alt me-1"></i>Pilih lokasi BPK</label>
                                 <div id="mapTambah" class="map-container"></div>
                                 <small class="text-muted mt-1 d-block">
-                                    <i class="fas fa-info-circle"></i> Klik langsung pada peta untuk mengisi koordinat secara otomatis
+                                    <i class="fas fa-info-circle"></i> Anda bisa mengetik koordinat secara manual atau mengklik langsung pada peta.
                                 </small>
                             </div>
                         </div>
@@ -653,7 +686,21 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                 maxZoom: 19
             }).addTo(mapOSM);
             
-            // Tambahkan marker untuk setiap BPK yang memiliki koordinat
+            // Inisialisasi Marker Cluster Group
+            const markersCluster = L.markerClusterGroup({
+                maxClusterRadius: 50,
+                iconCreateFunction: function(cluster) {
+                    const count = cluster.getChildCount();
+                    const size = count < 10 ? 40 : (count < 50 ? 50 : 60);
+                    return L.divIcon({
+                        html: `<div style="background:rgba(247,184,1,0.9);border-radius:50%;width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:${size < 50 ? 14 : 12}px;color:#0D0D0D;border:2px solid #F7B801;box-shadow:0 4px 15px rgba(247,184,1,0.3);">${count}</div>`,
+                        className: '',
+                        iconSize: [size, size],
+                        iconAnchor: [size/2, size/2]
+                    });
+                }
+            });
+            
             const bpkArray = Object.values(bpkData);
             let hasMarker = false;
             
@@ -670,7 +717,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                             iconSize: [32, 32],
                             iconAnchor: [16, 16]
                         })
-                    }).addTo(mapOSM);
+                    });
                     
                     marker.bindPopup(`
                         <div style="font-family: 'Poppins', sans-serif; font-size: 13px;">
@@ -682,8 +729,14 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                             </a>
                         </div>
                     `);
+                    
+                    // Tambahkan marker ke dalam cluster
+                    markersCluster.addLayer(marker);
                 }
             });
+            
+            // Tambahkan cluster group ke map
+            mapOSM.addLayer(markersCluster);
             
             if (hasMarker) {
                 // Fit bounds ke semua marker
@@ -776,6 +829,50 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                 }
             });
         }
+        
+        // Update Marker jika diketik manual (Tambah)
+        function updateMarkerTambah() {
+            if (!mapTambah) return;
+            const lat = parseFloat(document.getElementById('latTambah').value);
+            const lng = parseFloat(document.getElementById('lngTambah').value);
+            
+            if (!isNaN(lat) && !isNaN(lng)) {
+                const newLatLng = new L.LatLng(lat, lng);
+                if (markerTambah) {
+                    markerTambah.setLatLng(newLatLng);
+                } else {
+                    markerTambah = L.marker(newLatLng, { draggable: true }).addTo(mapTambah);
+                    markerTambah.on('dragend', function() {
+                        const pos = markerTambah.getLatLng();
+                        document.getElementById('latTambah').value = pos.lat.toFixed(8);
+                        document.getElementById('lngTambah').value = pos.lng.toFixed(8);
+                    });
+                }
+                mapTambah.panTo(newLatLng);
+            }
+        }
+        
+        // Update Marker jika diketik manual (Edit)
+        function updateMarkerEdit() {
+            if (!mapEdit) return;
+            const lat = parseFloat(document.getElementById('latEdit').value);
+            const lng = parseFloat(document.getElementById('lngEdit').value);
+            
+            if (!isNaN(lat) && !isNaN(lng)) {
+                const newLatLng = new L.LatLng(lat, lng);
+                if (markerEdit) {
+                    markerEdit.setLatLng(newLatLng);
+                } else {
+                    markerEdit = L.marker(newLatLng, { draggable: true }).addTo(mapEdit);
+                    markerEdit.on('dragend', function() {
+                        const pos = markerEdit.getLatLng();
+                        document.getElementById('latEdit').value = pos.lat.toFixed(8);
+                        document.getElementById('lngEdit').value = pos.lng.toFixed(8);
+                    });
+                }
+                mapEdit.panTo(newLatLng);
+            }
+        }
 
         // ============================================================
         // MODAL OPEN FUNCTIONS
@@ -815,6 +912,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                 });
             }
 
+            // Pada template form edit ini readonly DIHAPUS, ONINPUT DITAMBAHKAN
             document.getElementById('editContent').innerHTML = `
                 <div class="row">
                     <div class="col-md-6">
@@ -852,11 +950,11 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label required">Latitude</label>
-                                <input type="text" name="latitude" class="form-control coordinate-input" id="latEdit" value="${data.latitude || ''}" readonly required>
+                                <input type="text" name="latitude" class="form-control coordinate-input" id="latEdit" value="${data.latitude || ''}" oninput="updateMarkerEdit()" required>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label required">Longitude</label>
-                                <input type="text" name="longitude" class="form-control coordinate-input" id="lngEdit" value="${data.longitude || ''}" readonly required>
+                                <input type="text" name="longitude" class="form-control coordinate-input" id="lngEdit" value="${data.longitude || ''}" oninput="updateMarkerEdit()" required>
                             </div>
                         </div>
                         <div class="row">
@@ -879,7 +977,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                     <div class="col-md-6">
                         <label class="form-label">Klik peta untuk update koordinat</label>
                         <div id="mapEdit" class="map-container"></div>
-                        <small class="text-muted mt-1">Marker bisa di-drag untuk koordinat yang lebih tepat</small>
+                        <small class="text-muted mt-1 d-block">Marker bisa di-drag atau koordinat bisa diketik manual.</small>
                     </div>
                 </div>
             `;
@@ -1073,7 +1171,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                 Swal.fire({
                     icon: 'warning',
                     title: 'Perhatian!',
-                    text: 'Silakan klik pada peta untuk memilih koordinat BPK!',
+                    text: 'Silakan isi koordinat secara manual atau klik pada peta!',
                     customClass: {
                         popup: 'swal2-popup',
                         confirmButton: 'swal2-confirm'
@@ -1173,7 +1271,7 @@ if (!file_exists('../../assets/img/uploads/logo/')) {
                 Swal.fire({
                     icon: 'warning',
                     title: 'Perhatian!',
-                    text: 'Silakan klik pada peta untuk memilih koordinat!',
+                    text: 'Silakan isi koordinat secara manual atau klik pada peta!',
                     customClass: {
                         popup: 'swal2-popup',
                         confirmButton: 'swal2-confirm'

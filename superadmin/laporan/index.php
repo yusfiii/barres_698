@@ -156,12 +156,7 @@ include __DIR__ . '/../../includes/sidebar.php';
             color: #F7B801;
         }
 
-        .dropdown-divider {
-            margin: 8px 0;
-            border-color: #E0E0E0;
-        }
-
-        /* Report Cards */
+        /* Report Cards Grid */
         .report-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -213,14 +208,14 @@ include __DIR__ . '/../../includes/sidebar.php';
         }
 
         .report-card h5 {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 600;
             margin-bottom: 8px;
             color: #1A1A1A;
         }
 
         .report-card p {
-            font-size: 13px;
+            font-size: 12.5px;
             color: #666;
             margin-bottom: 0;
             line-height: 1.5;
@@ -271,6 +266,13 @@ include __DIR__ . '/../../includes/sidebar.php';
             background: linear-gradient(to right, rgba(247, 184, 1, 0.3), transparent);
         }
 
+        .card-custom {
+            background: #FFFFFF;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .main-content {
@@ -311,32 +313,19 @@ include __DIR__ . '/../../includes/sidebar.php';
             }
         }
 
-        /* Print styles for report cards */
         @media print {
-            .sidebar,
-            .top-navbar,
-            .dropdown-menu-custom,
-            .user-avatar,
-            .no-print {
+            .sidebar, .top-navbar, .dropdown-menu-custom, .user-avatar, .no-print {
                 display: none !important;
             }
-
             .main-content {
                 margin-left: 0 !important;
                 padding: 20px !important;
-            }
-
-            .report-card {
-                border: 1px solid #ddd !important;
-                break-inside: avoid;
             }
         }
     </style>
 </head>
 
 <body>
-
-    <!-- Sidebar sudah di-include dari includes/sidebar.php -->
 
     <!-- Main Content -->
     <div class="main-content">
@@ -364,13 +353,13 @@ include __DIR__ . '/../../includes/sidebar.php';
             </a>
         </div>
 
-        <!-- Report Cards -->
+        <!-- Report Cards Section -->
         <div class="section-title">
             <h3><i class="fas fa-file-alt" style="color: #F7B801;"></i> Daftar Laporan</h3>
             <span class="line"></span>
         </div>
         <p style="color: #666; font-size: 14px; margin-bottom: 24px;">
-            Klik pada salah satu kartu untuk melihat dan mencetak laporan
+            Klik pada salah satu kartu di bawah untuk membuka preview dan mencetak dokumen laporan
         </p>
 
         <div class="report-grid">
@@ -381,18 +370,18 @@ include __DIR__ . '/../../includes/sidebar.php';
                     <i class="fas fa-fire"></i>
                 </div>
                 <h5>Laporan Kejadian</h5>
-                <p>Detail Kejadian Kebakaran</p>
+                <p>Detail Rekapitulasi Kejadian Kebakaran</p>
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
 
-            <!-- 2. Laporan BPK Sekota Banjarbaru -->
+            <!-- 2. Laporan BPK -->
             <a href="laporan-bpk.php" class="report-card" target="_blank">
                 <span class="badge-count"><i class="fas fa-file-pdf me-1"></i> PDF</span>
                 <div class="icon-wrapper">
                     <i class="fas fa-building"></i>
                 </div>
                 <h5>Laporan BPK</h5>
-                <p>Semua BPK Sekota Banjarbaru yang terdaftar</p>
+                <p>Daftar BPK/PMK Terdaftar Sekota Banjarbaru</p>
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
 
@@ -403,100 +392,111 @@ include __DIR__ . '/../../includes/sidebar.php';
                     <i class="fas fa-users"></i>
                 </div>
                 <h5>Laporan Anggota</h5>
-                <p>Jumlah anggota pada kesatuan BPK</p>
+                <p>Daftar dan Jumlah Anggota BPK</p>
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
 
-            <!-- 4. Laporan Peta Hotspot -->
+            <!-- 4. Laporan Sarpras BPK -->
+            <a href="laporan-sarpras.php" class="report-card" target="_blank">
+                <span class="badge-count"><i class="fas fa-file-pdf me-1"></i> PDF</span>
+                <div class="icon-wrapper">
+                    <i class="fas fa-truck-monster"></i>
+                </div>
+                <h5>Laporan Sarpras BPK</h5>
+                <p>Inventaris Peralatan & Armada BPK</p>
+                <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
+            </a>
+
+            <!-- 5. Laporan Hydrant -->
+            <a href="laporan-hydrant.php" class="report-card" target="_blank">
+                <span class="badge-count"><i class="fas fa-file-pdf me-1"></i> PDF</span>
+                <div class="icon-wrapper">
+                    <i class="fas fa-faucet"></i>
+                </div>
+                <h5>Laporan Data Hydrant</h5>
+                <p>Fasilitas & Lokasi Hydrant Umum</p>
+                <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
+            </a>
+
+            <!-- 6. Laporan Peta Hotspot -->
             <a href="laporan-hotspot.php" class="report-card" target="_blank">
                 <span class="badge-count"><i class="fas fa-file-pdf me-1"></i> PDF</span>
                 <div class="icon-wrapper">
-                    <i class="fas fa-map"></i>
+                    <i class="fas fa-map-marked-alt"></i>
                 </div>
                 <h5>Laporan Peta Hotspot</h5>
-                <p>Visualisasi cetak dari analisis KDE</p>
+                <p>Visualisasi Pemetaan Analisis KDE</p>
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
 
-            <!-- 5. Laporan Kejadian Bulanan & Tahunan -->
+            <!-- 7. Laporan Bulanan & Tahunan -->
             <a href="laporan-tren.php" class="report-card" target="_blank">
                 <span class="badge-count"><i class="fas fa-file-pdf me-1"></i> PDF</span>
                 <div class="icon-wrapper">
                     <i class="fas fa-chart-line"></i>
                 </div>
-                <h5>Laporan Kejadian Bulanan & Tahunan</h5>
-                <p>Tren waktu kebakaran</p>
+                <h5>Laporan Tren Kebakaran</h5>
+                <p>Grafik Analisis Waktu Bulanan & Tahunan</p>
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
 
-            <!-- 6. Laporan Per Kelurahan/Kecamatan -->
-            <a href="laporan-perwilayah.php" class="report-card" target="_blank">
+            <!-- 8. Laporan per Wilayah -->
+            <a href="laporan-wilayah.php" class="report-card" target="_blank">
                 <span class="badge-count"><i class="fas fa-file-pdf me-1"></i> PDF</span>
                 <div class="icon-wrapper">
                     <i class="fas fa-map-marker-alt"></i>
                 </div>
-                <h5>Laporan Per Kelurahan/Kecamatan</h5>
-                <p>Grafik Kejadian per wilayah</p>
+                <h5>Laporan Kejadian per Wilayah</h5>
+                <p>Grafik Kepadatan Kecamatan & Kelurahan</p>
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
 
-            <!-- 7. Laporan Korban -->
+            <!-- 9. Laporan Korban & Dampak -->
             <a href="laporan-korban.php" class="report-card" target="_blank">
                 <span class="badge-count"><i class="fas fa-file-pdf me-1"></i> PDF</span>
                 <div class="icon-wrapper">
                     <i class="fas fa-user-injured"></i>
                 </div>
-                <h5>Laporan Korban</h5>
-                <p>Statistik korban terdampak</p>
+                <h5>Laporan Korban & Dampak</h5>
+                <p>Statistik Bangunan & Korban Terdampak</p>
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
 
-            <!-- 8. Laporan Status Anggota -->
-            <a href="laporan-status-anggota.php" class="report-card" target="_blank">
+            <!-- 10. Laporan Keaktifan Relawan -->
+            <a href="laporan-keaktifan.php" class="report-card" target="_blank">
                 <span class="badge-count"><i class="fas fa-file-pdf me-1"></i> PDF</span>
                 <div class="icon-wrapper">
                     <i class="fas fa-user-check"></i>
                 </div>
-                <h5>Laporan Status Anggota</h5>
-                <p>Keaktifan Relawan</p>
+                <h5>Laporan Keaktifan Relawan</h5>
+                <p>Rekapitulasi Status Keaktifan Anggota</p>
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
         </div>
 
         <!-- Informasi Tambahan -->
-        <div class="card-custom mt-4" style="background: #FFFFFF; border: 1px solid rgba(0,0,0,0.08); border-radius: 20px; padding: 20px 24px;">
+        <div class="card-custom mt-4" style="padding: 20px 24px;">
             <div class="row align-items-center">
                 <div class="col-md-8">
-                    <h6 style="font-weight: 600; color: #F7B801;"><i class="fas fa-info-circle me-2"></i>Informasi Laporan</h6>
+                    <h6 style="font-weight: 600; color: #F7B801;"><i class="fas fa-info-circle me-2"></i>Informasi Standar Laporan</h6>
                     <p style="color: #666; font-size: 13px; margin: 0;">
-                        Setiap laporan akan dicetak dengan format resmi yang mencakup kop surat, logo, dan tanda tangan 
-                        sesuai standar Sekretariat BARRES 698. Laporan dapat diekspor dalam format PDF untuk keperluan 
-                        arsip dan distribusi.
+                        Setiap laporan akan dicetak secara otomatis dengan format resmi yang mencakup Kop Surat resmi Banjarbaru Rescue 698, logo, nomor urut surat, dan kolom tanda tangan pengesahan.
                     </p>
                 </div>
                 <div class="col-md-4 text-end">
                     <span style="font-size: 12px; color: #999;">
-                        <i class="fas fa-file-pdf text-danger me-1"></i> 8 Jenis Laporan
+                        <i class="fas fa-file-pdf text-danger me-1"></i> 10 Modul Laporan Ready
                     </span>
                 </div>
             </div>
         </div>
     </div>
 
-    <style>
-        .card-custom {
-            background: #FFFFFF;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            border-radius: 20px;
-            overflow: hidden;
-        }
-    </style>
-
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
-        // Toggle dropdown
+        // Toggle dropdown navbar
         document.getElementById('userAvatar').addEventListener('click', function(e) {
             e.stopPropagation();
             document.getElementById('dropdownMenu').classList.toggle('show');

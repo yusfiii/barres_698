@@ -9,13 +9,13 @@ checkRole(['super_admin']);
 
 $user = getCurrentUser();
 
-// Filter parameters
+// Filter parameters (Kecamatan)
 $filter_kecamatan = isset($_GET['kecamatan']) ? $_GET['kecamatan'] : '';
 
 $conn = getConnection();
 
-// Ambil data BPK berdasarkan filter
-$query = "SELECT * FROM bpk WHERE 1=1";
+// Ambil data Hydrant berdasarkan filter (MENGGUNAKAN TABEL hydrant)
+$query = "SELECT * FROM hydrant WHERE 1=1";
 $params = [];
 $types = "";
 
@@ -25,18 +25,24 @@ if (!empty($filter_kecamatan)) {
     $types .= "s";
 }
 
-$query .= " ORDER BY nomor_registrasi ASC";
+$query .= " ORDER BY id DESC";
 
 $stmt = $conn->prepare($query);
+
+// Pengecekan error SQL
+if (!$stmt) {
+    die("Terjadi kesalahan pada Query SQL: " . $conn->error);
+}
+
 if (!empty($params)) {
     $stmt->bind_param($types, ...$params);
 }
 $stmt->execute();
 $result = $stmt->get_result();
-$daftar_bpk = $result->fetch_all(MYSQLI_ASSOC);
+$daftar_hydrant = $result->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-// List kecamatan Banjarbaru statis untuk dropdown filter
+// List kecamatan statis untuk dropdown filter di Banjarbaru
 $kecamatan_list = [
     'Banjarbaru Selatan',
     'Banjarbaru Utara',
@@ -45,11 +51,6 @@ $kecamatan_list = [
     'Liang Anggang'
 ];
 
-$conn->close();
-
-// Total BPK untuk sidebar
-$conn = getConnection();
-$total_bpk = $conn->query("SELECT COUNT(*) as total FROM bpk")->fetch_assoc()['total'];
 $conn->close();
 
 // Include sidebar
@@ -62,7 +63,7 @@ include __DIR__ . '/../../includes/sidebar.php';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Laporan BPK - BARRES 698</title>
+    <title>Laporan Hydrant - BARRES 698</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -168,17 +169,6 @@ include __DIR__ . '/../../includes/sidebar.php';
             animation: fadeIn 0.2s ease;
         }
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
         .dropdown-menu-custom a {
             display: flex;
             align-items: center;
@@ -193,11 +183,6 @@ include __DIR__ . '/../../includes/sidebar.php';
         .dropdown-menu-custom a:hover {
             background: rgba(247, 184, 1, 0.1);
             color: #F7B801;
-        }
-
-        .dropdown-divider {
-            margin: 8px 0;
-            border-color: #E0E0E0;
         }
 
         /* Filter Section */
@@ -271,30 +256,6 @@ include __DIR__ . '/../../includes/sidebar.php';
             color: #dc3545;
         }
 
-        /* No Data */
-        .no-data {
-            text-align: center;
-            padding: 40px 20px;
-            color: #999;
-        }
-
-        .no-data i {
-            font-size: 48px;
-            color: #ddd;
-            display: block;
-            margin-bottom: 15px;
-        }
-
-        .no-data p {
-            font-size: 16px;
-            color: #666;
-        }
-
-        .no-data small {
-            font-size: 13px;
-            color: #999;
-        }
-
         /* Responsive */
         @media (max-width: 768px) {
             .main-content {
@@ -325,7 +286,53 @@ include __DIR__ . '/../../includes/sidebar.php';
             }
         }
 
+        /* Panggil Helper CSS Web di DALAM tag style */
         <?= pdfPreviewCss() ?>
+
+        /* Perbaikan Kop Surat Preview */
+        .preview-container .kop-surat {
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            justify-content: center !important;
+            border-bottom: 3px solid #000 !important;
+            padding-bottom: 15px !important;
+            margin-bottom: 20px !important;
+            position: relative !important;
+        }
+
+        .preview-container .kop-surat img {
+            position: static !important;
+            height: 75px !important;
+            width: auto !important;
+            margin-right: 20px !important;
+            transform: none !important;
+        }
+
+        .preview-container .kop-surat .kop-text,
+        .preview-container .kop-surat div {
+            flex: 1 !important;
+            text-align: center !important;
+            padding-right: 95px !important;
+        }
+        
+        .preview-container .kop-surat h2,
+        .preview-container .kop-surat .nama-organisasi {
+            font-size: 16pt !important;
+            font-weight: 800 !important;
+            margin: 0 0 5px 0 !important;
+            color: #000 !important;
+            line-height: 1.2 !important;
+        }
+
+        .preview-container .kop-surat p,
+        .preview-container .kop-surat .alamat-kop,
+        .preview-container .kop-surat .kontak-kop {
+            font-size: 9.5pt !important;
+            color: #333 !important;
+            margin: 2px 0 !important;
+            line-height: 1.4 !important;
+        }
     </style>
 </head>
 
@@ -341,8 +348,8 @@ include __DIR__ . '/../../includes/sidebar.php';
         <!-- Top Navbar -->
         <div class="top-navbar no-print">
             <div class="page-title">
-                <h2>Laporan BPK</h2>
-                <p>Preview dan cetak laporan data BPK terdaftar</p>
+                <h2>Laporan Data Hydrant</h2>
+                <p>Preview dan cetak laporan fasilitas hydrant umum terdaftar</p>
             </div>
             <div class="user-dropdown" style="display: flex; align-items: center; gap: 15px;">
                 <div class="user-info">
@@ -381,7 +388,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                         <button type="submit" class="btn-gold">
                             <i class="fas fa-eye"></i> Preview
                         </button>
-                        <a href="cetak-pdf-bpk.php?kecamatan=<?= urlencode($filter_kecamatan) ?>" target="_blank" class="btn-pdf-custom">
+                        <a href="cetak-pdf-hydrant.php?kecamatan=<?= urlencode($filter_kecamatan) ?>" target="_blank" class="btn-pdf-custom">
                             <i class="fas fa-file-pdf"></i> Cetak PDF
                         </a>
                     </div>
@@ -390,7 +397,7 @@ include __DIR__ . '/../../includes/sidebar.php';
         </div>
 
         <!-- Preview Laporan -->
-        <?php if (count($daftar_bpk) > 0): ?>
+        <?php if (count($daftar_hydrant) > 0): ?>
             <?php
             ob_start();
             ?>
@@ -398,30 +405,37 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <thead>
                     <tr>
                         <th style="width: 5%;">No</th>
-                        <th style="width: 10%;">No. Reg</th>
-                        <th style="width: 20%;">Nama BPK/PMK</th>
+                        <th style="width: 22%;">Nama / Lokasi Hydrant</th>
                         <th style="width: 18%;">Kecamatan & Kelurahan</th>
-                        <th style="width: 20%;">Alamat</th>
-                        <th style="width: 17%;">Titik Koordinat Posko</th>
-                        <th class="center" style="width: 10%;">Jumlah Anggota</th>
+                        <th style="width: 23%;">Alamat Lengkap</th>
+                        <th style="width: 17%;">Titik Koordinat</th>
+                        <th class="center" style="width: 15%;">Status</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($daftar_bpk as $i => $bpk): ?>
+                    <?php foreach ($daftar_hydrant as $i => $hyd): ?>
                         <tr>
                             <td class="center"><?= $i + 1 ?></td>
-                            <td><?= htmlspecialchars($bpk['nomor_registrasi'] ?? '-') ?></td>
-                            <td><?= htmlspecialchars($bpk['nama_bpk'] ?? '-') ?></td>
-                            <td><?= htmlspecialchars($bpk['kecamatan'] ?? '-') ?> / <?= htmlspecialchars($bpk['kelurahan'] ?? '-') ?></td>
-                            <td><?= htmlspecialchars($bpk['alamat'] ?? '-') ?></td>
-                            <td><?= htmlspecialchars($bpk['latitude'] ?? '-') ?>,<br><?= htmlspecialchars($bpk['longitude'] ?? '-') ?></td>
-                            <td class="center"><?= (int) ($bpk['jumlah_anggota'] ?? 0) ?></td>
+                            <!-- Nama Hydrant otomatis berdasarkan ID jika keterangan tidak ada -->
+                            <td><strong><?= htmlspecialchars($hyd['keterangan'] ?? 'Hydrant Umum #' . $hyd['id']) ?></strong></td>
+                            <td><?= htmlspecialchars($hyd['kecamatan'] ?? '-') ?> / <?= htmlspecialchars($hyd['kelurahan'] ?? '-') ?></td>
+                            <td><?= htmlspecialchars($hyd['alamat'] ?? '-') ?></td>
+                            <td><?= htmlspecialchars($hyd['latitude'] ?? '-') ?>,<br><?= htmlspecialchars($hyd['longitude'] ?? '-') ?></td>
+                            <td class="center">
+                                <?php 
+                                $status = $hyd['status'] ?? 'berfungsi';
+                                $badgeColor = (strtolower($status) == 'berfungsi') ? '#28a745' : '#dc3545';
+                                ?>
+                                <span style="color: <?= $badgeColor ?>; font-weight: bold; text-transform: uppercase;">
+                                    <?= htmlspecialchars($status) ?>
+                                </span>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
             <p style="margin-top: 10px; font-size: 10pt;">
-                Total BPK/PMK terdaftar: <strong><?= count($daftar_bpk) ?></strong>
+                Total Titik Hydrant terdaftar: <strong><?= count($daftar_hydrant) ?> titik</strong>
                 <?php if (!empty($filter_kecamatan)): ?>
                     (Kecamatan: <?= htmlspecialchars($filter_kecamatan) ?>)
                 <?php endif; ?>
@@ -430,15 +444,15 @@ include __DIR__ . '/../../includes/sidebar.php';
             $isi_html = ob_get_clean();
 
             echo pdfPreviewHtml([
-                'judul'         => 'LAPORAN DATA BPK',
-                'nomor_urut'    => '023',
+                'judul'         => 'LAPORAN DATA FASILITAS HYDRANT UMUM',
+                'nomor_urut'    => '030',
                 'tanggal_acuan' => time(),
                 'isi_html'      => $isi_html,
             ]);
             ?>
         <?php else: ?>
             <div class="laporan-preview">
-                <?= pdfPreviewNoData('Tidak ada data BPK untuk filter ini', 'Silakan ubah filter kecamatan atau tambahkan data BPK terlebih dahulu.') ?>
+                <?= pdfPreviewNoData('Tidak ada data Hydrant untuk filter ini', 'Silakan ubah filter kecamatan atau tambahkan data fasilitas hydrant terlebih dahulu.') ?>
             </div>
         <?php endif; ?>
 

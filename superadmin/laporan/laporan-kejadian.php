@@ -49,8 +49,19 @@ $result = $stmt->get_result();
 $kejadian = $result->fetch_assoc();
 $stmt->close();
 
-// Ambil semua kejadian untuk dropdown
-$all_kejadian = $conn->query("SELECT id, alamat, waktu, kecamatan FROM kejadian_kebakaran ORDER BY waktu DESC");
+// Ambil semua kejadian untuk data JavaScript dropdown dinamis
+$all_kejadian_result = $conn->query("SELECT id, alamat, waktu, kecamatan FROM kejadian_kebakaran ORDER BY waktu DESC");
+$events_for_js = [];
+if ($all_kejadian_result) {
+    while ($row = $all_kejadian_result->fetch_assoc()) {
+        $events_for_js[] = [
+            'id' => $row['id'],
+            'bulan' => date('Y-m', strtotime($row['waktu'])),
+            'kecamatan' => $row['kecamatan'],
+            'label' => date('d/m/Y', strtotime($row['waktu'])) . ' - ' . htmlspecialchars(substr($row['alamat'], 0, 40)) . '...'
+        ];
+    }
+}
 
 // List kecamatan untuk filter
 $kecamatan_list = $conn->query("SELECT DISTINCT kecamatan FROM kejadian_kebakaran WHERE kecamatan IS NOT NULL ORDER BY kecamatan");
@@ -611,29 +622,13 @@ include __DIR__ . '/../../includes/sidebar.php';
         <!-- Filter Section -->
         <div class="filter-section no-print">
             <form method="GET" action="" class="row g-3 align-items-end">
-                <div class="col-md-3">
-                    <label class="form-label"><i class="fas fa-search me-1"></i> Pilih Kejadian</label>
-                    <select name="id" class="form-select">
-                        <option value="">-- Pilih Kejadian Spesifik --</option>
-                        <?php
-                        if ($all_kejadian && $all_kejadian->num_rows > 0):
-                            mysqli_data_seek($all_kejadian, 0);
-                            while ($row = $all_kejadian->fetch_assoc()):
-                        ?>
-                                <option value="<?= $row['id'] ?>" <?= $filter_id == $row['id'] ? 'selected' : '' ?>>
-                                    <?= date('d/m/Y', strtotime($row['waktu'])) ?> - <?= htmlspecialchars(substr($row['alamat'], 0, 40)) ?>...
-                                </option>
-                        <?php endwhile;
-                        endif; ?>
-                    </select>
-                </div>
                 <div class="col-md-2">
                     <label class="form-label"><i class="fas fa-calendar me-1"></i> Bulan</label>
-                    <input type="month" name="bulan" class="form-control" value="<?= htmlspecialchars($filter_bulan) ?>">
+                    <input type="month" name="bulan" id="bulanFilter" class="form-control" value="<?= htmlspecialchars($filter_bulan) ?>">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label"><i class="fas fa-map-marker-alt me-1"></i> Kecamatan</label>
-                    <select name="kecamatan" class="form-select">
+                    <select name="kecamatan" id="kecamatanFilter" class="form-select">
                         <option value="">Semua Kecamatan</option>
                         <?php
                         if ($kecamatan_list && $kecamatan_list->num_rows > 0):
@@ -645,6 +640,13 @@ include __DIR__ . '/../../includes/sidebar.php';
                                 </option>
                         <?php endwhile;
                         endif; ?>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label"><i class="fas fa-search me-1"></i> Pilih Kejadian</label>
+                    <select name="id" id="kejadianFilter" class="form-select">
+                        <option value="">-- Pilih Kejadian Spesifik --</option>
+                        <!-- Options akan diisi via JavaScript berdasarkan Bulan & Kecamatan -->
                     </select>
                 </div>
                 <div class="col-md-4">
@@ -773,7 +775,44 @@ include __DIR__ . '/../../includes/sidebar.php';
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
-        // Toggle dropdown
+        // Data seluruh kejadian dari PHP ke JavaScript
+        const allKejadian = <?= json_encode($events_for_js) ?>;
+        const currentSelectedId = "<?= $filter_id ?>";
+
+        // Fungsi untuk mengupdate dropdown kejadian
+        function updateKejadianDropdown() {
+            const bulan = document.getElementById('bulanFilter').value;
+            const kecamatan = document.getElementById('kecamatanFilter').value;
+            const select = document.getElementById('kejadianFilter');
+            
+            // Kosongkan opsi sebelumnya
+            select.innerHTML = '<option value="">-- Pilih Kejadian Spesifik --</option>';
+            
+            // Filter array data berdasarkan pilihan
+            let filtered = allKejadian;
+            
+            if (bulan) {
+                filtered = filtered.filter(k => k.bulan === bulan);
+            }
+            if (kecamatan) {
+                filtered = filtered.filter(k => k.kecamatan === kecamatan);
+            }
+            
+            // Tambahkan kembali opsi yang tersaring ke dropdown
+            filtered.forEach(k => {
+                const isSelected = (k.id == currentSelectedId) ? 'selected' : '';
+                select.innerHTML += `<option value="${k.id}" ${isSelected}>${k.label}</option>`;
+            });
+        }
+
+        // Jalankan fungsi filter saat Input Bulan atau Kecamatan berubah
+        document.getElementById('bulanFilter').addEventListener('change', updateKejadianDropdown);
+        document.getElementById('kecamatanFilter').addEventListener('change', updateKejadianDropdown);
+
+        // Jalankan saat pertama kali halaman dimuat
+        document.addEventListener('DOMContentLoaded', updateKejadianDropdown);
+
+        // Toggle dropdown user
         document.getElementById('userAvatar').addEventListener('click', function(e) {
             e.stopPropagation();
             document.getElementById('dropdownMenu').classList.toggle('show');

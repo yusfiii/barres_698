@@ -27,6 +27,24 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     $conn = getConnection();
     
+    // ============================================================
+    // FUNGSI PENCATATAN LOG AKTIVITAS (Sesuai Struktur Database)
+    // ============================================================
+    if (!function_exists('catatLog')) {
+        function catatLog($conn, $user, $aktivitas) {
+            $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+            $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+            $nama = isset($user['nama']) ? $user['nama'] : $user['username'];
+            
+            $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("issssss", $user['id'], $user['username'], $user['role'], $nama, $aktivitas, $ip_address, $user_agent);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
+    $user = getCurrentUser();
+
     // Ambil data dari POST
     $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
     $waktu = $_POST['waktu'] ?? '';
@@ -42,9 +60,9 @@ try {
     $korban_jiwa = intval($_POST['korban_jiwa'] ?? 0);
     $penyebab = $_POST['penyebab'] ?? '';
     $penyebab_lainnya = trim($_POST['penyebab_lainnya'] ?? '');
-    $skala = $_POST['skala'] ?? '';
+    $kerusakan = $_POST['kerusakan'] ?? ''; // Update dari "skala" menjadi "kerusakan"
     $keterangan = trim($_POST['keterangan'] ?? '');
-    $current_user_id = $_SESSION['user_id']; // Akun yang sedang login (penambah/pengedit)
+    $current_user_id = $_SESSION['user_id'];
     
     // Jika penyebab "Lainnya", gunakan nilai dari penyebab_lainnya
     if ($penyebab === 'Lainnya' && !empty($penyebab_lainnya)) {
@@ -107,7 +125,7 @@ try {
                 korban_luka = ?, 
                 korban_jiwa = ?, 
                 penyebab = ?, 
-                skala = ?, 
+                kerusakan = ?, 
                 keterangan = ?, 
                 foto = ?,
                 diupdate_oleh = ?
@@ -127,7 +145,7 @@ try {
             $korban_luka,
             $korban_jiwa,
             $penyebab,
-            $skala,
+            $kerusakan,
             $keterangan,
             $foto_name,
             $current_user_id,
@@ -135,8 +153,7 @@ try {
         );
         
         if ($stmt->execute()) {
-            // LOG AKTIVITAS - EDIT
-            logAktivitas('Mengedit data kejadian kebakaran ID: ' . $id, $_SESSION['user_id']);
+            catatLog($conn, $user, 'Mengedit data kejadian kebakaran ID: ' . $id);
             echo json_encode([
                 'success' => true,
                 'message' => 'Data kejadian berhasil diupdate!'
@@ -155,7 +172,7 @@ try {
             INSERT INTO kejadian_kebakaran 
             (waktu, latitude, longitude, alamat, kecamatan, kelurahan, 
              jumlah_bangunan, jumlah_KK, jumlah_individu, korban_luka, korban_jiwa, 
-             penyebab, skala, keterangan, foto, dibuat_oleh) 
+             penyebab, kerusakan, keterangan, foto, dibuat_oleh) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->bind_param(
@@ -172,7 +189,7 @@ try {
             $korban_luka,
             $korban_jiwa,
             $penyebab,
-            $skala,
+            $kerusakan,
             $keterangan,
             $foto_name,
             $current_user_id
@@ -180,8 +197,7 @@ try {
         
         if ($stmt->execute()) {
             $new_id = $conn->insert_id;
-            // LOG AKTIVITAS - TAMBAH
-            logAktivitas('Menambahkan data kejadian kebakaran ID: ' . $new_id, $_SESSION['user_id']);
+            catatLog($conn, $user, 'Menambahkan data kejadian kebakaran baru (ID: ' . $new_id . ')');
             echo json_encode([
                 'success' => true,
                 'message' => 'Data kejadian berhasil ditambahkan!'

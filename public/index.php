@@ -20,7 +20,6 @@ $bpk_query = "
 $bpk_result = $conn->query($bpk_query);
 $bpk_list = [];
 while ($row = $bpk_result->fetch_assoc()) {
-    // Proses anggota list
     $anggota_names = [];
     if ($row['anggota_list']) {
         $anggota_names = explode('||', $row['anggota_list']);
@@ -37,11 +36,13 @@ $stats_query = "
         COUNT(*) as total_kejadian,
         COALESCE(SUM(korban_luka), 0) as total_luka,
         COALESCE(SUM(korban_jiwa), 0) as total_jiwa,
-        COALESCE(SUM(jumlah_bangunan), 0) as total_bangunan
+        COALESCE(SUM(jumlah_bangunan), 0) as total_bangunan,
+        COALESCE(SUM(jumlah_KK), 0) as total_kk,
+        COALESCE(SUM(jumlah_individu), 0) as total_individu
     FROM kejadian_kebakaran
 ";
 $stats_result = $conn->query($stats_query);
-$stats = $stats_result->fetch_assoc() ?: ['total_kejadian' => 0, 'total_luka' => 0, 'total_jiwa' => 0, 'total_bangunan' => 0];
+$stats = $stats_result->fetch_assoc() ?: ['total_kejadian' => 0, 'total_luka' => 0, 'total_jiwa' => 0, 'total_bangunan' => 0, 'total_kk' => 0, 'total_individu' => 0];
 
 // Ambil data kejadian terbaru untuk preview
 $recent_incidents = $conn->query("
@@ -59,9 +60,13 @@ $kecamatan_stats = $conn->query("
         SUM(korban_luka) as total_luka,
         SUM(korban_jiwa) as total_jiwa
     FROM kejadian_kebakaran
+    WHERE kecamatan IS NOT NULL
     GROUP BY kecamatan
     ORDER BY total_kejadian DESC
 ");
+
+// Ambil data hydrant
+$hydrant_count = $conn->query("SELECT COUNT(*) as total FROM hydrant")->fetch_assoc()['total'];
 
 $conn->close();
 ?>
@@ -144,12 +149,14 @@ $conn->close();
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: hidden;
         }
 
-        .nav-logo-icon svg {
-            width: 20px;
-            height: 20px;
-            fill: var(--jet-black);
+        .nav-logo-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 10px;
         }
 
         .nav-logo-text {
@@ -207,7 +214,6 @@ $conn->close();
             background: linear-gradient(135deg, var(--gold-dark), var(--gold)) !important;
         }
 
-        /* Hamburger */
         .nav-toggle {
             display: none;
             background: none;
@@ -264,6 +270,27 @@ $conn->close();
         }
 
         .btn-outline-gold:hover {
+            border-color: var(--gold);
+            color: var(--gold);
+            background: rgba(247, 184, 1, 0.08);
+        }
+
+        .btn-outline-white {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: transparent;
+            color: rgba(255, 255, 255, .7);
+            font-weight: 500;
+            font-size: .88rem;
+            padding: 12px 26px;
+            border-radius: 12px;
+            border: 1.5px solid rgba(255, 255, 255, 0.15);
+            text-decoration: none;
+            transition: all .2s;
+        }
+
+        .btn-outline-white:hover {
             border-color: var(--gold);
             color: var(--gold);
             background: rgba(247, 184, 1, 0.08);
@@ -364,7 +391,6 @@ $conn->close();
             flex-wrap: wrap;
         }
 
-        /* Hero Right — visual rings */
         .hero-right {
             position: relative;
             z-index: 1;
@@ -456,7 +482,6 @@ $conn->close();
             }
         }
 
-        /* Floating nodes */
         .node {
             position: absolute;
             background: rgba(255, 255, 255, .04);
@@ -515,7 +540,7 @@ $conn->close();
 
         /* ─── SECTION UMUM ──────────────────────── */
         .section {
-            padding: 100px 0;
+            padding: 80px 0;
         }
 
         .section-dark {
@@ -580,12 +605,128 @@ $conn->close();
             color: #4a4540;
         }
 
-        /* ─── STATS CARD ───────────────────────── */
+        .section-text-center {
+            text-align: center;
+            margin: 0 auto;
+        }
+
+        /* ─── SECTION 2: EDUKASI KDE ───────────── */
+        .kde-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 48px;
+            align-items: center;
+            margin-top: 40px;
+        }
+
+        .kde-visual {
+            background: var(--dark-grey);
+            border-radius: 20px;
+            padding: 40px;
+            border: 1px solid rgba(247, 184, 1, 0.12);
+            position: relative;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .kde-visual canvas {
+            max-width: 100%;
+            max-height: 250px;
+        }
+
+        .kde-card {
+            background: var(--dark-grey);
+            border-radius: 16px;
+            padding: 20px 24px;
+            border: 1px solid rgba(247, 184, 1, 0.08);
+            margin-bottom: 16px;
+            transition: all .3s;
+        }
+
+        .kde-card:hover {
+            border-color: rgba(247, 184, 1, 0.3);
+            transform: translateX(4px);
+        }
+
+        .kde-card .icon {
+            color: var(--gold);
+            font-size: 1.2rem;
+            margin-right: 12px;
+        }
+
+        .kde-card h6 {
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .kde-card p {
+            font-size: .85rem;
+            color: rgba(255, 255, 255, .5);
+            margin: 0;
+        }
+
+        /* ─── SECTION 3: FITUR UNGGULAN ────────── */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-top: 40px;
+        }
+
+        .feature-card {
+            background: var(--dark-grey);
+            border-radius: 20px;
+            padding: 32px 24px;
+            text-align: center;
+            border: 1px solid rgba(247, 184, 1, 0.12);
+            transition: all .3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(247, 184, 1, 0.3);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-icon {
+            width: 64px;
+            height: 64px;
+            background: rgba(247, 184, 1, 0.12);
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+        }
+
+        .feature-icon i {
+            font-size: 28px;
+            color: var(--gold);
+        }
+
+        .feature-card h5 {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .feature-card p {
+            font-size: .85rem;
+            color: rgba(255, 255, 255, .5);
+            margin: 0;
+            line-height: 1.6;
+        }
+
+        /* ─── SECTION 4: STATISTIK ──────────────── */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 24px;
-            margin-top: 48px;
+            margin-top: 40px;
         }
 
         .stat-card {
@@ -636,111 +777,66 @@ $conn->close();
             font-family: 'DM Mono', monospace;
         }
 
-        /* ─── BPK GRID ─────────────────────────── */
-        .bpk-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 24px;
-            margin-top: 40px;
-        }
-
-        .bpk-card {
+        .chart-container {
             background: var(--dark-grey);
             border-radius: 20px;
             padding: 24px;
             border: 1px solid rgba(247, 184, 1, 0.12);
+            margin-top: 40px;
+        }
+
+        .chart-container canvas {
+            max-height: 300px;
+        }
+
+        /* ─── SECTION 5: QUICK INSIGHTS ──────────── */
+        .insights-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 24px;
+            margin-top: 40px;
+        }
+
+        .insight-card {
+            background: var(--dark-grey);
+            border-radius: 20px;
+            padding: 28px 24px;
+            border: 1px solid rgba(247, 184, 1, 0.12);
             transition: all .3s;
         }
 
-        .bpk-card:hover {
+        .insight-card:hover {
             border-color: rgba(247, 184, 1, 0.3);
             transform: translateY(-4px);
         }
 
-        .bpk-header {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            margin-bottom: 16px;
-        }
-
-        .bpk-icon {
-            width: 55px;
-            height: 55px;
-            background: rgba(247, 184, 1, 0.12);
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
-        .bpk-icon i {
-            font-size: 24px;
-            color: var(--gold);
-        }
-
-        .bpk-title h4 {
-            font-size: 1.1rem;
+        .insight-card .number {
+            font-size: 2.8rem;
             font-weight: 700;
-            color: #fff;
-            margin-bottom: 4px;
-            font-family: 'Poppins', sans-serif;
-        }
-
-        .bpk-title p {
-            font-size: .75rem;
             color: var(--gold);
-            margin-bottom: 0;
-        }
-
-        .bpk-details {
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid rgba(247, 184, 1, 0.1);
-        }
-
-        .bpk-detail-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: .8rem;
-            color: rgba(255, 255, 255, .6);
+            line-height: 1;
             margin-bottom: 8px;
         }
 
-        .bpk-detail-item i {
-            color: var(--gold);
-            width: 20px;
+        .insight-card .label {
             font-size: .85rem;
+            color: rgba(255, 255, 255, .5);
+            font-weight: 400;
         }
 
-        .bpk-anggota {
+        .insight-card .desc {
+            font-size: .78rem;
+            color: rgba(255, 255, 255, .35);
             margin-top: 12px;
+            line-height: 1.6;
         }
 
-        .bpk-anggota-label {
-            font-size: .7rem;
+        .insight-card .highlight {
             color: var(--gold);
             font-weight: 600;
-            margin-bottom: 6px;
         }
 
-        .anggota-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
-        .anggota-tag {
-            background: rgba(247, 184, 1, 0.1);
-            border-radius: 12px;
-            padding: 3px 10px;
-            font-size: .7rem;
-            color: rgba(255, 255, 255, .7);
-        }
-
-        /* ─── INCIDENTS TABLE ──────────────────── */
+        /* ─── KEJADIAN TERBARU ──────────────────── */
         .incidents-table {
             background: var(--dark-grey);
             border-radius: 20px;
@@ -750,22 +846,20 @@ $conn->close();
 
         .incidents-table thead th {
             background: rgba(0, 0, 0, 0.3);
-            padding: 16px 20px;
-            font-size: .75rem;
+            padding: 14px 20px;
+            font-size: .7rem;
             font-weight: 600;
             letter-spacing: 1px;
             text-transform: uppercase;
             color: var(--gold);
             border-bottom: 1px solid rgba(247, 184, 1, 0.2);
-            font-family: 'Poppins', sans-serif;
         }
 
         .incidents-table tbody td {
-            padding: 14px 20px;
-            font-size: .85rem;
+            padding: 12px 20px;
+            font-size: .82rem;
             color: rgba(255, 255, 255, .7);
             border-bottom: 1px solid rgba(247, 184, 1, 0.08);
-            font-weight: 400;
         }
 
         .incidents-table tbody tr:hover {
@@ -790,17 +884,12 @@ $conn->close();
             font-weight: 600;
         }
 
-        /* Chart Container */
-        .chart-container {
-            background: var(--dark-grey);
+        .badge-penyebab {
+            background: rgba(108, 117, 125, 0.15);
+            color: rgba(255, 255, 255, .5);
+            padding: 4px 10px;
             border-radius: 20px;
-            padding: 24px;
-            border: 1px solid rgba(247, 184, 1, 0.12);
-            margin-top: 40px;
-        }
-
-        .chart-container canvas {
-            max-height: 300px;
+            font-size: .7rem;
         }
 
         /* ─── FOOTER ────────────────────────────── */
@@ -995,7 +1084,20 @@ $conn->close();
                 padding: 0 32px 80px;
             }
 
+            .kde-grid {
+                grid-template-columns: 1fr;
+                gap: 32px;
+            }
+
+            .features-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
             .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .insights-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
 
@@ -1030,10 +1132,47 @@ $conn->close();
                 grid-template-columns: 1fr;
             }
 
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .insights-grid {
+                grid-template-columns: 1fr;
+            }
+
             .footer-bottom {
                 flex-direction: column;
                 gap: 16px;
                 text-align: center;
+            }
+
+            .section {
+                padding: 60px 0;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .hero-title {
+                font-size: 2.5rem;
+            }
+
+            .hero-actions {
+                flex-direction: column;
+                width: 100%;
+            }
+
+            .hero-actions .btn-gold,
+            .hero-actions .btn-outline-gold {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .stat-card-number {
+                font-size: 2.4rem;
+            }
+
+            .stat-card {
+                padding: 24px 16px;
             }
         }
     </style>
@@ -1045,7 +1184,7 @@ $conn->close();
     <nav class="site-nav" id="siteNav">
         <a class="nav-logo" href="index.php">
             <div class="nav-logo-icon">
-                <img src="../assets/barres2.png" alt="BARRES Logo" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;">
+                <img src="../assets/barres2.png" alt="BARRES Logo">
             </div>
             <div>
                 <span class="nav-logo-text">BARRES 698</span>
@@ -1075,7 +1214,9 @@ $conn->close();
         </button>
     </nav>
 
-    <!-- HERO SECTION -->
+    <!-- ============================================================ -->
+    <!-- SECTION 1: HERO                                               -->
+    <!-- ============================================================ -->
     <section class="hero" id="hero">
         <div class="hero-left">
             <div class="hero-eyebrow reveal">Sistem Informasi Geografis</div>
@@ -1113,11 +1254,100 @@ $conn->close();
         </div>
     </section>
 
-    <!-- STATISTIK SECTION -->
+    <!-- ============================================================ -->
+    <!-- SECTION 2: EDUKASI & INTERPRETASI KDE                         -->
+    <!-- ============================================================ -->
+    <section class="section section-dark" id="edukasi">
+        <div class="container">
+            <div class="row justify-content-center text-center reveal">
+                <div class="col-lg-8">
+                    <div class="section-label" style="justify-content: center;">Apa itu KDE?</div>
+                    <h2 class="section-title">Memahami Metode <span style="color: var(--gold);">Kernel Density Estimation</span></h2>
+                    <p class="section-text" style="margin: 0 auto; max-width: 600px;">
+                        KDE adalah metode statistik untuk mengestimasi kepadatan titik data di suatu wilayah.
+                        Semakin rapat titik kebakaran, semakin tinggi tingkat risiko di area tersebut.
+                    </p>
+                </div>
+            </div>
+
+            <div class="kde-grid">
+                <div class="reveal">
+                    <div class="kde-card">
+                        <div>
+                            <span class="icon"><i class="fas fa-circle"></i></span>
+                            <h6>Apa itu KDE?</h6>
+                            <p>Kernel Density Estimation (KDE) adalah teknik statistik non-parametrik untuk memperkirakan fungsi kepadatan probabilitas. Dalam konteks SIG, KDE mengubah titik-titik kejadian menjadi peta kepadatan yang halus.</p>
+                        </div>
+                    </div>
+                    <div class="kde-card">
+                        <div>
+                            <span class="icon"><i class="fas fa-expand-alt"></i></span>
+                            <h6>Bandwidth / Radius</h6>
+                            <p>Menentukan seberapa jauh pengaruh setiap titik terhadap area sekitarnya. Radius besar = area panas lebih luas, radius kecil = lebih detail.</p>
+                        </div>
+                    </div>
+                    <div class="kde-card">
+                        <div>
+                            <span class="icon"><i class="fas fa-gradient"></i></span>
+                            <h6>Interpretasi Heatmap</h6>
+                            <p>Warna <span style="color: #00cc44;">hijau</span> → kepadatan rendah, <span style="color: #ffcc00;">kuning</span> → sedang, <span style="color: #ff3300;">merah</span> → kepadatan tinggi (zona rawan kebakaran).</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="kde-visual reveal">
+                    <canvas id="kdeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- SECTION 3: FITUR UNGGULAN                                     -->
+    <!-- ============================================================ -->
+    <section class="section section-light" id="fitur">
+        <div class="container">
+            <div class="row justify-content-center text-center reveal">
+                <div class="col-lg-8">
+                    <div class="section-label" style="justify-content: center;">Fitur Unggulan</div>
+                    <h2 class="section-title">Solusi Lengkap <span style="color: var(--gold);">Manajemen Kebakaran</span></h2>
+                    <p class="section-text" style="margin: 0 auto; max-width: 600px; color: #4a4540;">
+                        Platform terintegrasi untuk pemetaan, pelaporan, dan manajemen data kebakaran di Kota Banjarbaru.
+                    </p>
+                </div>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card reveal">
+                    <div class="feature-icon"><i class="fas fa-map-marked-alt"></i></div>
+                    <h5>Pemetaan & Heatmap KDE</h5>
+                    <p>Visualisasi titik lokasi kebakaran dan analisis kepadatan menggunakan metode Kernel Density Estimation (KDE).</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon"><i class="fas fa-fire-hydrant"></i></div>
+                    <h5>Pemetaan Hydrant & BPK</h5>
+                    <p>Informasi lokasi hydrant dan unit BPK Swakarsa yang tersebar di seluruh kecamatan Banjarbaru.</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon"><i class="fas fa-database"></i></div>
+                    <h5>Manajemen Data BPK</h5>
+                    <p>Pengelolaan data anggota, fasilitas, dan administrasi BPK Swakarsa secara terpusat dan terstruktur.</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon"><i class="fas fa-file-alt"></i></div>
+                    <h5>Pelaporan Digital</h5>
+                    <p>Laporan kejadian kebakaran berbasis digital dengan format terstandarisasi untuk kebutuhan arsip dan analisis.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- SECTION 4: STATISTIK KEBKARAN                                 -->
+    <!-- ============================================================ -->
     <section class="section section-dark" id="statistik">
         <div class="container">
             <div class="row justify-content-center text-center reveal">
-                <div class="col-lg-6">
+                <div class="col-lg-8">
                     <div class="section-label" style="justify-content: center;">Rekapitulasi Data</div>
                     <h2 class="section-title">Statistik Kebakaran</h2>
                     <p class="section-text" style="margin: 0 auto;">Data kumulatif kejadian kebakaran yang tercatat dalam sistem</p>
@@ -1147,86 +1377,63 @@ $conn->close();
                 </div>
             </div>
 
-            <!-- Chart Statistik per Kecamatan -->
             <div class="chart-container reveal">
                 <canvas id="kecamatanChart"></canvas>
             </div>
         </div>
     </section>
 
-    <!-- BPK SECTION -->
-    <section class="section section-light">
+    <!-- ============================================================ -->
+    <!-- SECTION 5: QUICK INSIGHTS (NARASI INFOGRAPHIS)                -->
+    <!-- ============================================================ -->
+    <section class="section section-light" id="insights">
         <div class="container">
-            <div class="row align-items-center gy-5">
-                <div class="col-lg-5 reveal">
-                    <div class="section-label">Unit Operasional</div>
-                    <h2 class="section-title">Barisan Pemadam Kebakaran (BPK)</h2>
-                    <p class="section-text" style="color: #4a4540;">
-                        BPK adalah ujung tombak penanganan kebakaran di tingkat kecamatan. Terdiri dari relawan terlatih
-                        yang tersebar di seluruh wilayah Kota Banjarbaru.
+            <div class="row justify-content-center text-center reveal">
+                <div class="col-lg-8">
+                    <div class="section-label" style="justify-content: center;">Quick Insights</div>
+                    <h2 class="section-title">Ringkasan <span style="color: var(--gold);">Cepat</span></h2>
+                    <p class="section-text" style="margin: 0 auto; max-width: 600px; color: #4a4540;">
+                        Gambaran singkat kondisi kebakaran dan kesiapsiagaan di Kota Banjarbaru.
                     </p>
-                    <div style="margin-top: 32px;">
-                        <div class="stat-card" style="background: rgba(247, 184, 1, 0.05); border-color: rgba(247, 184, 1, 0.15);">
-                            <div class="stat-card-icon" style="background: rgba(247, 184, 1, 0.12);"><i class="fas fa-users"></i></div>
-                            <div class="stat-card-number"><?= $total_bpk ?> Unit</div>
-                            <div class="stat-card-label">BPK Aktif</div>
-                        </div>
+                </div>
+            </div>
+
+            <div class="insights-grid">
+                <div class="insight-card reveal">
+                    <div class="number"><?= number_format($stats['total_kejadian'] ?? 0, 0, ',', '.') ?></div>
+                    <div class="label">Total Kejadian</div>
+                    <div class="desc">
+                        Jumlah total kejadian kebakaran yang tercatat. Wilayah dengan kepadatan tertinggi berada di
+                        <span class="highlight">Kecamatan <?= !empty($kecamatan_stats) ? $kecamatan_stats->fetch_assoc()['kecamatan'] : '-' ?></span>.
                     </div>
                 </div>
-                <div class="col-lg-7 reveal">
-                    <div class="bpk-grid">
-                        <?php foreach ($bpk_list as $bpk): ?>
-                            <div class="bpk-card">
-                                <div class="bpk-header">
-                                    <div class="bpk-icon">
-                                        <i class="fas fa-fire-extinguisher"></i>
-                                    </div>
-                                    <div class="bpk-title">
-                                        <h4><?= htmlspecialchars($bpk['nama_bpk'] ?? $bpk['kecamatan']) ?></h4>
-                                        <p><i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($bpk['kecamatan']) ?></p>
-                                    </div>
-                                </div>
-                                <div class="bpk-details">
-                                    <div class="bpk-detail-item">
-                                        <i class="fas fa-calendar-alt"></i>
-                                        <span>Tahun Berdiri: <?= htmlspecialchars($bpk['tahun_berdiri'] ?? '-') ?></span>
-                                    </div>
-                                    <div class="bpk-detail-item">
-                                        <i class="fas fa-phone"></i>
-                                        <span>Kontak: <?= htmlspecialchars($bpk['kontak'] ?? '-') ?></span>
-                                    </div>
-                                    <?php if ($bpk['anggota_count'] > 0): ?>
-                                        <div class="bpk-anggota">
-                                            <div class="bpk-anggota-label">
-                                                <i class="fas fa-user-friends"></i> Anggota (<?= $bpk['anggota_count'] ?>)
-                                            </div>
-                                            <div class="anggota-list">
-                                                <?php foreach (array_slice($bpk['anggota_names'], 0, 4) as $anggota): ?>
-                                                    <span class="anggota-tag"><?= htmlspecialchars(substr($anggota, 0, 15)) ?></span>
-                                                <?php endforeach; ?>
-                                                <?php if ($bpk['anggota_count'] > 4): ?>
-                                                    <span class="anggota-tag">+<?= $bpk['anggota_count'] - 4 ?> lagi</span>
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                        <?php if (empty($bpk_list)): ?>
-                            <div class="text-center py-4" style="color: #666;">Belum ada data BPK</div>
-                        <?php endif; ?>
+                <div class="insight-card reveal">
+                    <div class="number"><?= number_format($total_bpk, 0, ',', '.') ?></div>
+                    <div class="label">Unit BPK Aktif</div>
+                    <div class="desc">
+                        Jumlah unit <span class="highlight">Barisan Pemadam Kebakaran (BPK)</span> yang tersebar di 5 kecamatan,
+                        siap memberikan respons cepat terhadap kejadian kebakaran.
+                    </div>
+                </div>
+                <div class="insight-card reveal">
+                    <div class="number"><?= number_format($hydrant_count, 0, ',', '.') ?></div>
+                    <div class="label">Titik Hydrant</div>
+                    <div class="desc">
+                        Jumlah titik hydrant yang terpasang. Ketersediaan air untuk pemadaman merupakan faktor penting
+                        dalam <span class="highlight">kesiapsiagaan kebakaran</span>.
                     </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- KEJADIAN TERBARU SECTION -->
-    <section class="section section-dark">
+    <!-- ============================================================ -->
+    <!-- SECTION 6: KEJADIAN TERBARU                                   -->
+    <!-- ============================================================ -->
+    <section class="section section-dark" id="kejadian-terbaru">
         <div class="container">
             <div class="row justify-content-center text-center reveal">
-                <div class="col-lg-6">
+                <div class="col-lg-8">
                     <div class="section-label" style="justify-content: center;">Kejadian Terkini</div>
                     <h2 class="section-title">5 Kejadian Terbaru</h2>
                     <p class="section-text" style="margin: 0 auto;">Data kejadian kebakaran terbaru yang tercatat</p>
@@ -1242,21 +1449,26 @@ $conn->close();
                                 <th>Lokasi</th>
                                 <th>Kecamatan</th>
                                 <th>Kelurahan</th>
-                                <th>Bangunan</th>
+                                <th>Penyebab</th>
                                 <th>Luka</th>
                                 <th>Jiwa</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if ($recent_incidents && $recent_incidents->num_rows > 0):
+                                $recent_incidents->data_seek(0);
                                 while ($inc = $recent_incidents->fetch_assoc()):
+                                    $penyebab = $inc['penyebab'] ?? '-';
+                                    if (!empty($inc['penyebab_lainnya'])) {
+                                        $penyebab = $inc['penyebab_lainnya'];
+                                    }
                             ?>
                                     <tr>
                                         <td><?= date('d/m/Y H:i', strtotime($inc['waktu'])) ?></td>
-                                        <td><?= htmlspecialchars(substr($inc['alamat'], 0, 40)) ?><?= strlen($inc['alamat']) > 40 ? '...' : '' ?></td>
+                                        <td><?= htmlspecialchars(substr($inc['alamat'], 0, 35)) ?><?= strlen($inc['alamat']) > 35 ? '...' : '' ?></td>
                                         <td><?= htmlspecialchars($inc['kecamatan'] ?? '-') ?></td>
                                         <td><?= htmlspecialchars($inc['kelurahan'] ?? '-') ?></td>
-                                        <td><?= $inc['jumlah_bangunan'] ?>学
+                                        <td><span class="badge-penyebab"><?= htmlspecialchars($penyebab) ?></span></td>
                                         <td><span class="badge-luka"><?= $inc['korban_luka'] ?></span></td>
                                         <td><span class="badge-jiwa"><?= $inc['korban_jiwa'] ?></span></td>
                                     </tr>
@@ -1278,7 +1490,9 @@ $conn->close();
         </div>
     </section>
 
-    <!-- FOOTER -->
+    <!-- ============================================================ -->
+    <!-- FOOTER                                                        -->
+    <!-- ============================================================ -->
     <footer class="site-footer">
         <div class="container">
             <div class="row gy-5">
@@ -1366,9 +1580,7 @@ $conn->close();
                     observer.unobserve(e.target);
                 }
             });
-        }, {
-            threshold: 0.12
-        });
+        }, { threshold: 0.12 });
 
         reveals.forEach(el => observer.observe(el));
 
@@ -1377,13 +1589,70 @@ $conn->close();
             setTimeout(() => el.classList.add('visible'), 200 + i * 100);
         });
 
-        // Chart.js untuk statistik per kecamatan
+        // ============================================================
+        // CHART 1: KDE Visualization (Section Edukasi)
+        // ============================================================
+        const kdeCtx = document.getElementById('kdeChart').getContext('2d');
+        new Chart(kdeCtx, {
+            type: 'line',
+            data: {
+                labels: ['', '', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+                datasets: [{
+                    label: 'Kernel Density Estimation',
+                    data: [0.02, 0.04, 0.08, 0.15, 0.25, 0.35, 0.42, 0.45, 0.42, 0.35, 0.25, 0.15, 0.08, 0.04, 0.02],
+                    borderColor: '#F7B801',
+                    backgroundColor: 'rgba(247, 184, 1, 0.15)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#F5F5F5',
+                            font: { family: 'Poppins', size: 11 }
+                        }
+                    },
+                    tooltip: {
+                        enabled: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { display: false }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { display: false }
+                    }
+                },
+                elements: {
+                    line: {
+                        borderWidth: 3
+                    }
+                }
+            }
+        });
+
+        // ============================================================
+        // CHART 2: Statistik per Kecamatan
+        // ============================================================
         <?php
         $kecamatan_labels = [];
         $kecamatan_data = [];
-        while ($row = $kecamatan_stats->fetch_assoc()) {
-            $kecamatan_labels[] = $row['kecamatan'];
-            $kecamatan_data[] = $row['total_kejadian'];
+        if ($kecamatan_stats) {
+            $kecamatan_stats->data_seek(0);
+            while ($row = $kecamatan_stats->fetch_assoc()) {
+                $kecamatan_labels[] = $row['kecamatan'];
+                $kecamatan_data[] = $row['total_kejadian'];
+            }
         }
         ?>
 
@@ -1409,10 +1678,7 @@ $conn->close();
                     legend: {
                         labels: {
                             color: '#F5F5F5',
-                            font: {
-                                family: 'Poppins',
-                                size: 12
-                            }
+                            font: { family: 'Poppins', size: 12 }
                         }
                     },
                     tooltip: {
@@ -1426,48 +1692,30 @@ $conn->close();
                 scales: {
                     y: {
                         beginAtZero: true,
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
-                        },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' },
                         ticks: {
                             color: '#F5F5F5',
-                            font: {
-                                family: 'Poppins',
-                                size: 11
-                            },
+                            font: { family: 'Poppins', size: 11 },
                             stepSize: 1
                         },
                         title: {
                             display: true,
                             text: 'Jumlah Kejadian',
                             color: '#F7B801',
-                            font: {
-                                family: 'Poppins',
-                                size: 12,
-                                weight: 'bold'
-                            }
+                            font: { family: 'Poppins', size: 12, weight: 'bold' }
                         }
                     },
                     x: {
-                        grid: {
-                            display: false
-                        },
+                        grid: { display: false },
                         ticks: {
                             color: '#F5F5F5',
-                            font: {
-                                family: 'Poppins',
-                                size: 11
-                            }
+                            font: { family: 'Poppins', size: 11 }
                         },
                         title: {
                             display: true,
                             text: 'Kecamatan',
                             color: '#F7B801',
-                            font: {
-                                family: 'Poppins',
-                                size: 12,
-                                weight: 'bold'
-                            }
+                            font: { family: 'Poppins', size: 12, weight: 'bold' }
                         }
                     }
                 }

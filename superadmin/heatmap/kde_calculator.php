@@ -1,10 +1,10 @@
 <?php
-// heatmap/kde_calculator.php
+// superadmin/heatmap/kde_calculator.php
 require_once __DIR__ . '/../../includes/config.php';
 
 class KDECalculator {
     private $data;
-    private $bandwidth;
+    public $bandwidth;
     private $kernelType;
     private $minLat;
     private $maxLat;
@@ -202,7 +202,7 @@ class KDECalculator {
  * API function untuk mendapatkan data KDE
  */
 function getKDEHeatmapData($conn, $params) {
-    // Default bounds berdasarkan data
+    // Default bounds berdasarkan data Banjarbaru
     $defaultBounds = [
         'minLat' => -3.50,
         'maxLat' => -3.42,
@@ -221,10 +221,9 @@ function getKDEHeatmapData($conn, $params) {
     $bandwidth = isset($params['bandwidth']) ? (float)$params['bandwidth'] : null;
     $kernelType = isset($params['kernel']) ? $params['kernel'] : 'gaussian';
     
-    // Query dengan FORCE INDEX untuk performa optimal
+    // MENGHAPUS FORCE INDEX agar tidak menyebabkan Fatal Error MySQL
     $sql = "SELECT latitude, longitude, id, kecamatan, waktu 
             FROM kejadian_kebakaran 
-            FORCE INDEX (idx_location)
             WHERE latitude IS NOT NULL 
             AND longitude IS NOT NULL 
             AND latitude BETWEEN ? AND ?
@@ -260,7 +259,7 @@ function getKDEHeatmapData($conn, $params) {
     if (count($data) < 2) {
         return [
             'status' => 'error',
-            'message' => 'Data tidak mencukupi untuk KDE (minimal 2 titik)',
+            'message' => 'Data tidak mencukupi untuk algoritma KDE (minimal butuh 2 titik kejadian)',
             'total_points' => count($data)
         ];
     }
@@ -296,7 +295,7 @@ function getKDEHeatmapData($conn, $params) {
         'bandwidth' => $kde->bandwidth,
         'kernel_type' => $kernelType,
         'statistics' => $kde->getStatistics(),
-        'index_used' => 'idx_location'
+        'index_used' => 'none'
     ];
 }
 ?>

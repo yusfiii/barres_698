@@ -13,6 +13,25 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit();
 }
 
+$user = getCurrentUser();
+$conn = getConnection();
+
+// ============================================================
+// FUNGSI PENCATATAN LOG AKTIVITAS (Sesuai Struktur Database)
+// ============================================================
+if (!function_exists('catatLog')) {
+    function catatLog($conn, $user, $aktivitas) {
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $nama = isset($user['nama']) ? $user['nama'] : $user['username'];
+        
+        $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssss", $user['id'], $user['username'], $user['role'], $nama, $aktivitas, $ip_address, $user_agent);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
+
 $action = isset($_POST['action']) ? $_POST['action'] : '';
 $nama = trim($_POST['nama'] ?? '');
 $username = trim($_POST['username'] ?? '');
@@ -26,8 +45,6 @@ if (empty($nama) || empty($username) || empty($role)) {
     echo json_encode(['success' => false, 'message' => 'Nama, Username, dan Role wajib diisi!']);
     exit();
 }
-
-$conn = getConnection();
 
 if ($action == 'tambah') {
     // Validasi username unik
@@ -53,6 +70,7 @@ if ($action == 'tambah') {
     $stmt->bind_param("sssssi", $nama, $username, $hashed, $no_hp, $role, $bpk_id);
     
     if ($stmt->execute()) {
+        catatLog($conn, $user, "Menambahkan akun baru: " . $username . " (" . str_replace('_', ' ', strtoupper($role)) . ")");
         echo json_encode(['success' => true, 'message' => 'Akun berhasil ditambahkan!']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal menambahkan akun: ' . $stmt->error]);
@@ -69,13 +87,13 @@ if ($action == 'tambah') {
     // Validasi username unik (kecuali dirinya sendiri)
     $cek = $conn->query("SELECT id FROM users WHERE username = '$username' AND id != $id");
     if ($cek->num_rows > 0) {
-        echo json_encode(['success' => false, 'message' => 'Username sudah digunakan!']);
+        echo json_encode(['success' => false, 'message' => 'Username sudah digunakan oleh akun lain!']);
         exit();
     }
     
     // Cek role admin_bpk harus punya bpk_id
     if ($role == 'admin_bpk' && empty($bpk_id)) {
-        echo json_encode(['success' => false, 'message' => 'Admin BPK harus dipilih BPK!']);
+        echo json_encode(['success' => false, 'message' => 'Admin BPK harus memilih organisasi BPK-nya!']);
         exit();
     }
     
@@ -93,6 +111,7 @@ if ($action == 'tambah') {
     }
     
     if ($stmt->execute()) {
+        catatLog($conn, $user, "Memperbarui data akun: " . $username);
         echo json_encode(['success' => true, 'message' => 'Akun berhasil diupdate!']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal mengupdate akun: ' . $stmt->error]);

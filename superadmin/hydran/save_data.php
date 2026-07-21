@@ -8,7 +8,24 @@ checkRole(['super_admin']);
 
 header('Content-Type: application/json');
 
+$user = getCurrentUser();
 $conn = getConnection();
+
+// ============================================================
+// FUNGSI PENCATATAN LOG AKTIVITAS (Sesuai Struktur Database)
+// ============================================================
+if (!function_exists('catatLog')) {
+    function catatLog($conn, $user, $aktivitas) {
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+        $nama = isset($user['nama']) ? $user['nama'] : $user['username'];
+        
+        $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("issssss", $user['id'], $user['username'], $user['role'], $nama, $aktivitas, $ip_address, $user_agent);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
 
 $action = isset($_POST['action']) ? $_POST['action'] : (isset($_POST['id']) && !empty($_POST['id']) ? 'edit' : 'tambah');
 
@@ -65,6 +82,7 @@ if ($action == 'tambah' || ($_POST['id'] ?? '')) {
         }
 
         if ($stmt->execute()) {
+            catatLog($conn, $user, "Memperbarui data hydrant ID: " . $id);
             echo json_encode(['success' => true, 'message' => 'Data hydrant berhasil diupdate!']);
         } else {
             echo json_encode(['success' => false, 'message' => 'Gagal mengupdate data: ' . $stmt->error]);
@@ -76,6 +94,8 @@ if ($action == 'tambah' || ($_POST['id'] ?? '')) {
         $stmt->bind_param("ddsssisss", $latitude, $longitude, $alamat, $kecamatan, $kelurahan, $tahun_pemasangan, $foto_name, $status, $keterangan);
 
         if ($stmt->execute()) {
+            $new_id = $stmt->insert_id;
+            catatLog($conn, $user, "Menambahkan data hydrant baru (ID: " . $new_id . ") di " . $kecamatan);
             echo json_encode(['success' => true, 'message' => 'Data hydrant berhasil ditambahkan!']);
         } else {
             echo json_encode(['success' => false, 'message' => 'Gagal menambahkan data: ' . $stmt->error]);
