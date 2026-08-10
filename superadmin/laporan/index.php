@@ -429,14 +429,14 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
 
-            <!-- 7. Laporan Bulanan & Tahunan -->
+            <!-- 7. Laporan Bulanan (Yang diubah) -->
             <a href="laporan-tren.php" class="report-card" target="_blank">
                 <span class="badge-count"><i class="fas fa-file-pdf me-1"></i> PDF</span>
                 <div class="icon-wrapper">
-                    <i class="fas fa-chart-line"></i>
+                    <i class="fas fa-calendar-alt"></i>
                 </div>
-                <h5>Laporan Tren Kebakaran</h5>
-                <p>Grafik Analisis Waktu Bulanan & Tahunan</p>
+                <h5>Laporan Bulanan</h5>
+                <p>Detail dan analisis kejadian kebakaran per bulan</p>
                 <div class="arrow-icon"><i class="fas fa-arrow-right"></i></div>
             </a>
 

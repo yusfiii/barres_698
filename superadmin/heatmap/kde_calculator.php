@@ -15,7 +15,6 @@ class KDECalculator {
         $this->data = $data;
         $this->kernelType = $kernelType;
         
-        // Hitung bounds data
         if (!empty($data)) {
             $this->minLat = min(array_column($data, 'latitude'));
             $this->maxLat = max(array_column($data, 'latitude'));
@@ -35,7 +34,7 @@ class KDECalculator {
      */
     private function calculateOptimalBandwidth() {
         $n = count($this->data);
-        if ($n < 2) return 0.01;
+        if ($n < 2) return 0.016; // Default aman jika titik sangat sedikit
         
         $lats = array_column($this->data, 'latitude');
         $lngs = array_column($this->data, 'longitude');
@@ -47,83 +46,54 @@ class KDECalculator {
         // Silverman's rule untuk 2D
         $h = pow(4/(2+2), 1/(2+4)) * pow($n, -1/(2+4)) * $std;
         
-        return max($h, 0.001);
+        // PERBAIKAN FINAL: 
+        // Kunci sebaran asap KDE selalu berada di antara 0.014 derajat hingga 0.018 derajat
+        // Skala ini adalah yang paling sempurna dan proporsional untuk luas Kota Banjarbaru
+        return min(max($h, 0.014), 0.018);
     }
     
-    /**
-     * Menghitung standar deviasi
-     */
     private function calculateStdDev($array) {
         $n = count($array);
         if ($n < 2) return 0;
-        
         $mean = array_sum($array) / $n;
         $variance = array_sum(array_map(function($x) use ($mean) {
             return pow($x - $mean, 2);
         }, $array)) / $n;
-        
         return sqrt($variance);
     }
     
-    /**
-     * Kernel Gaussian 2D
-     */
     private function gaussianKernel($distance) {
         $h = $this->bandwidth;
         $sigma = $h / 2.0;
-        
         if ($sigma == 0) return 0;
-        
-        return (1 / (2 * M_PI * pow($sigma, 2))) * 
-               exp(-pow($distance, 2) / (2 * pow($sigma, 2)));
+        return (1 / (2 * M_PI * pow($sigma, 2))) * exp(-pow($distance, 2) / (2 * pow($sigma, 2)));
     }
     
-    /**
-     * Kernel Epanechnikov 2D
-     */
     private function epanechnikovKernel($distance) {
         $h = $this->bandwidth;
-        
         if ($distance > $h || $h == 0) return 0;
-        
         $ratio = $distance / $h;
         return (2 / M_PI) * (1 - pow($ratio, 2));
     }
     
-    /**
-     * Kernel Quartic (Biweight)
-     */
     private function quarticKernel($distance) {
         $h = $this->bandwidth;
-        
         if ($distance > $h || $h == 0) return 0;
-        
         $ratio = $distance / $h;
         return (15 / (16 * M_PI)) * pow(1 - pow($ratio, 2), 2);
     }
     
-    /**
-     * Jarak Euclidean antar titik koordinat
-     */
     private function euclideanDistance($lat1, $lng1, $lat2, $lng2) {
         return sqrt(pow($lat1 - $lat2, 2) + pow($lng1 - $lng2, 2));
     }
     
-    /**
-     * Menghitung estimasi KDE untuk satu titik
-     */
     public function estimate($lat, $lng) {
         $density = 0;
         $n = count($this->data);
-        
         if ($n === 0) return 0;
         
         foreach ($this->data as $point) {
-            $distance = $this->euclideanDistance(
-                $lat, $lng, 
-                $point['latitude'], $point['longitude']
-            );
-            
+            $distance = $this->euclideanDistance($lat, $lng, $point['latitude'], $point['longitude']);
             switch ($this->kernelType) {
                 case 'gaussian':
                     $density += $this->gaussianKernel($distance);
@@ -138,19 +108,14 @@ class KDECalculator {
                     $density += $this->gaussianKernel($distance);
             }
         }
-        
         return $density / $n;
     }
     
-    /**
-     * Menghitung KDE untuk grid dengan optimasi
-     */
     public function estimateGridOptimized($bounds, $gridSize = 50) {
         $grid = [];
         $stepLat = ($bounds['maxLat'] - $bounds['minLat']) / $gridSize;
         $stepLng = ($bounds['maxLng'] - $bounds['minLng']) / $gridSize;
         
-        // Filter data dalam batas + bandwidth
         $filteredData = array_filter($this->data, function($point) use ($bounds) {
             return $point['latitude'] >= $bounds['minLat'] - $this->bandwidth &&
                    $point['latitude'] <= $bounds['maxLat'] + $this->bandwidth &&
@@ -176,15 +141,10 @@ class KDECalculator {
             $grid[] = $row;
             $lat += $stepLat;
         }
-        
         $this->data = $tempData;
-        
         return $grid;
     }
     
-    /**
-     * Mendapatkan statistik KDE
-     */
     public function getStatistics() {
         return [
             'total_points' => count($this->data),
@@ -198,11 +158,7 @@ class KDECalculator {
     }
 }
 
-/**
- * API function untuk mendapatkan data KDE
- */
 function getKDEHeatmapData($conn, $params) {
-    // Default bounds berdasarkan data Banjarbaru
     $defaultBounds = [
         'minLat' => -3.50,
         'maxLat' => -3.42,
@@ -221,13 +177,31 @@ function getKDEHeatmapData($conn, $params) {
     $bandwidth = isset($params['bandwidth']) ? (float)$params['bandwidth'] : null;
     $kernelType = isset($params['kernel']) ? $params['kernel'] : 'gaussian';
     
-    // MENGHAPUS FORCE INDEX agar tidak menyebabkan Fatal Error MySQL
     $sql = "SELECT latitude, longitude, id, kecamatan, waktu 
             FROM kejadian_kebakaran 
             WHERE latitude IS NOT NULL 
             AND longitude IS NOT NULL 
             AND latitude BETWEEN ? AND ?
             AND longitude BETWEEN ? AND ?";
+            
+    $types = "dddd";
+    $bindParams = [
+        $bounds['minLat'], $bounds['maxLat'],
+        $bounds['minLng'], $bounds['maxLng']
+    ];
+
+    if (!empty($params['startDate']) && !empty($params['endDate'])) {
+        $sql .= " AND DATE(waktu) BETWEEN ? AND ?";
+        $types .= "ss";
+        $bindParams[] = $params['startDate'];
+        $bindParams[] = $params['endDate'];
+    }
+
+    if (!empty($params['kecamatan'])) {
+        $sql .= " AND kecamatan = ?";
+        $types .= "s";
+        $bindParams[] = $params['kecamatan'];
+    }
     
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
@@ -237,10 +211,7 @@ function getKDEHeatmapData($conn, $params) {
         ];
     }
     
-    $stmt->bind_param("dddd", 
-        $bounds['minLat'], $bounds['maxLat'],
-        $bounds['minLng'], $bounds['maxLng']
-    );
+    $stmt->bind_param($types, ...$bindParams);
     $stmt->execute();
     $result = $stmt->get_result();
     
@@ -264,11 +235,9 @@ function getKDEHeatmapData($conn, $params) {
         ];
     }
     
-    // Hitung KDE
     $kde = new KDECalculator($data, $bandwidth, $kernelType);
     $gridData = $kde->estimateGridOptimized($bounds, $gridSize);
     
-    // Normalisasi data
     $minVal = min(array_map('min', $gridData));
     $maxVal = max(array_map('max', $gridData));
     

@@ -70,11 +70,15 @@ if ($tipe == 'all' || $tipe == 'hydrant') {
 }
 
 // BPK
+// BPK
 if ($tipe == 'all' || $tipe == 'bpk') {
-    $sqlBpk = "SELECT * FROM bpk";
+    // Menggunakan kolom bpk_id sesuai struktur database
+    $sqlBpk = "SELECT bpk.*, (SELECT COUNT(*) FROM anggota WHERE bpk_id = bpk.id) AS jumlah_anggota FROM bpk";
+    
     if ($kecamatan) {
         $sqlBpk .= " WHERE kecamatan = '$kecamatan'";
     }
+    
     $bpkResult = $conn->query($sqlBpk);
     while ($row = $bpkResult->fetch_assoc()) {
         $response['bpk'][] = $row;

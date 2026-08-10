@@ -267,7 +267,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <div id="mapReport"></div>
                 <div class="map-loading" id="mapLoading">
                     <div class="spinner-border text-warning" role="status"></div>
-                    <p class="mt-2" style="font-family: 'Poppins', sans-serif;">Memproses Algoritma KDE...</p>
+                    <p class="mt-2" style="font-family: 'Poppins', sans-serif;">Memuat Peta KDE...</p>
                 </div>
             </div>
 
@@ -289,22 +289,41 @@ include __DIR__ . '/../../includes/sidebar.php';
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if ($kecamatanStats && $kecamatanStats->num_rows > 0): 
+                    <?php 
+                    if ($kecamatanStats && $kecamatanStats->num_rows > 0): 
+                        // 1. Simpan data ke array dan cari nilai tertinggi untuk acuan dinamis
+                        $dataKec = [];
+                        $maxTotal = 0;
+                        while ($row = $kecamatanStats->fetch_assoc()) {
+                            $dataKec[] = $row;
+                            if ($row['total'] > $maxTotal) $maxTotal = $row['total'];
+                        }
+
                         $no = 1;
-                        while ($row = $kecamatanStats->fetch_assoc()):
+                        foreach ($dataKec as $row):
+                            // 2. Klasifikasi dinamis berdasarkan persentase dari nilai tertinggi
+                            $persentase = ($maxTotal > 0) ? (($row['total'] / $maxTotal) * 100) : 0;
+                            
                             $kepadatan = 'Rendah';
-                            if ($row['total'] >= 5) $kepadatan = 'Tinggi';
-                            elseif ($row['total'] >= 3) $kepadatan = 'Sedang';
+                            $warna = '#28a745'; // Hijau
+                            
+                            if ($persentase >= 75) {
+                                $kepadatan = 'Tinggi';
+                                $warna = '#dc3545'; // Merah
+                            } elseif ($persentase >= 40) {
+                                $kepadatan = 'Sedang';
+                                $warna = '#fd7e14'; // Orange
+                            }
                     ?>
                         <tr>
                             <td class="center" style="text-align: center;"><?= $no++ ?></td>
                             <td><?= htmlspecialchars($row['kecamatan']) ?></td>
                             <td class="center" style="text-align: center;"><?= $row['total'] ?> titik</td>
-                            <td class="center" style="text-align: center; font-weight: bold;">
+                            <td class="center" style="text-align: center; font-weight: bold; color: <?= $warna ?>;">
                                 <?= $kepadatan ?>
                             </td>
                         </tr>
-                    <?php endwhile; else: ?>
+                    <?php endforeach; else: ?>
                         <tr>
                             <td colspan="4" style="text-align: center;">Data kejadian kosong atau tidak memiliki koordinat spasial.</td>
                         </tr>
@@ -356,84 +375,41 @@ include __DIR__ . '/../../includes/sidebar.php';
         const radiusVal = <?= $heatmapSettings['radius'] ?? 25 ?>;
         const blurVal = <?= $heatmapSettings['blur'] ?? 15 ?>;
         const intensityVal = <?= $heatmapSettings['intensity'] ?? 70 ?>;
-        const intensityMultiplier = intensityVal / 100;
 
-        async function loadKDE() {
-            if (kejadianData.length < 2) {
-                document.getElementById('mapLoading').innerHTML = '<p>Data tidak cukup untuk KDE (Minimal 2 titik)</p>';
+        function loadKDE() {
+            if (kejadianData.length < 1) {
+                document.getElementById('mapLoading').innerHTML = '<p>Data tidak cukup untuk menampilkan Heatmap</p>';
                 return;
             }
 
-            const lats = kejadianData.map(d => d.lat);
-            const lngs = kejadianData.map(d => d.lng);
-            const padding = 0.02;
+            // Sensitivitas maksimum mengikuti rumus yang sama
+            const maxVal = 2.0 - (intensityVal / 100);
 
-            const bounds = {
-                minLat: Math.min(...lats) - padding,
-                maxLat: Math.max(...lats) + padding,
-                minLng: Math.min(...lngs) - padding,
-                maxLng: Math.max(...lngs) + padding
-            };
+            // Pemetaan data mentah (tanpa fetch AJAX ke backend grid)
+            const heatmapData = kejadianData.map(data => [data.lat, data.lng, 1]);
 
-            const params = new URLSearchParams({
-                minLat: bounds.minLat,
-                maxLat: bounds.maxLat,
-                minLng: bounds.minLng,
-                maxLng: bounds.maxLng,
-                gridSize: 50
-            });
-
-            try {
-                // Fetch KDE Backend
-                const response = await fetch(`../heatmap/kde_heatmap.php?${params.toString()}`);
-                const data = await response.json();
-
-                if (data.status === 'success') {
-                    const grid = data.grid_data;
-                    const b = data.bounds;
-                    const gs = data.grid_size;
-
-                    const stepLat = (b.maxLat - b.minLat) / gs;
-                    const stepLng = (b.maxLng - b.minLng) / gs;
-
-                    const heatmapData = [];
-                    let currentLat = b.minLat;
-                    
-                    for (let i = 0; i < gs; i++) {
-                        let currentLng = b.minLng;
-                        for (let j = 0; j < gs; j++) {
-                            const value = grid[i][j];
-                            if (value > 0.01) {
-                                heatmapData.push([currentLat, currentLng, value * intensityMultiplier]);
-                            }
-                            currentLng += stepLng;
-                        }
-                        currentLat += stepLat;
-                    }
-
-                    // Render Heatmap Layer
-                    L.heatLayer(heatmapData, {
-                        radius: radiusVal,
-                        blur: blurVal,
-                        maxZoom: 18,
-                        max: 1.0,
-                        gradient: {
-                            0.0: '#00cc44', 0.2: '#88cc00', 0.4: '#ffcc00', 
-                            0.6: '#ff8800', 0.8: '#ff4400', 1.0: '#ff0000'
-                        }
-                    }).addTo(map);
-
-                    // Fit bounds to map
-                    const latLngs = kejadianData.map(d => [d.lat, d.lng]);
-                    map.fitBounds(latLngs, { padding: [50, 50] });
-
-                    // Hide Loading
-                    document.getElementById('mapLoading').style.display = 'none';
+            // Render Heatmap Layer
+            L.heatLayer(heatmapData, {
+                radius: radiusVal,
+                blur: blurVal,
+                maxZoom: 15,
+                max: maxVal,
+                gradient: { 
+                    0.0: '#00cc44', 
+                    0.3: '#88cc00', 
+                    0.5: '#ffcc00', 
+                    0.7: '#ff8800', 
+                    0.8: '#ff4400', 
+                    1.0: '#ff0000' 
                 }
-            } catch (error) {
-                console.error('Error fetching KDE:', error);
-                document.getElementById('mapLoading').innerHTML = '<p class="text-danger">Gagal memuat algoritma KDE.</p>';
-            }
+            }).addTo(map);
+
+            // Menyesuaikan tampilan peta (fit bounds) dengan koordinat
+            const latLngs = kejadianData.map(d => [d.lat, d.lng]);
+            map.fitBounds(latLngs, { padding: [50, 50] });
+
+            // Hilangkan animasi loading
+            document.getElementById('mapLoading').style.display = 'none';
         }
 
         document.addEventListener('DOMContentLoaded', loadKDE);
