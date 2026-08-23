@@ -1323,10 +1323,10 @@ $conn->close();
                     <p>Visualisasi titik lokasi kebakaran dan analisis kepadatan menggunakan metode Kernel Density Estimation (KDE).</p>
                 </div>
                 <div class="feature-card reveal">
-                    <div class="feature-icon"><i class="fas fa-fire-hydrant"></i></div>
-                    <h5>Pemetaan Hydrant & BPK</h5>
-                    <p>Informasi lokasi hydrant dan unit BPK Swakarsa yang tersebar di seluruh kecamatan Banjarbaru.</p>
-                </div>
+    <div class="feature-icon"><i class="fas fa-fire-extinguisher"></i></div>
+    <h5>Pemetaan Hydrant & BPK</h5>
+    <p>Informasi lokasi hydrant dan unit BPK Swakarsa yang tersebar di seluruh kecamatan Banjarbaru.</p>
+</div>
                 <div class="feature-card reveal">
                     <div class="feature-icon"><i class="fas fa-database"></i></div>
                     <h5>Manajemen Data BPK</h5>
@@ -1527,11 +1527,11 @@ $conn->close();
                     </div>
                     <div class="footer-contact-item">
                         <i class="fas fa-phone"></i>
-                        <span>(0511) 123456</span>
+                        <span>(0851) 11315698</span>
                     </div>
                     <div class="footer-contact-item">
                         <i class="fas fa-envelope"></i>
-                        <span>info@barres698.id</span>
+                        <span>barres698.banjarbaru@gmail.com</span>
                     </div>
                 </div>
 
@@ -1539,7 +1539,7 @@ $conn->close();
                     <div class="footer-heading">Darurat</div>
                     <div class="emergency-box">
                         <div class="label">Pemadam Kebakaran</div>
-                        <div class="number">113</div>
+                        <div class="number">112</div>
                     </div>
                 </div>
             </div>

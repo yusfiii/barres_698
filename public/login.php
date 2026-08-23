@@ -400,108 +400,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             transform: translateX(-3px);
         }
 
-        /* Demo credentials card */
-        .demo-card {
-            background: rgba(42, 42, 42, 0.8);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 20px;
-            margin-top: 20px;
-            border: 1px solid rgba(247, 184, 1, 0.12);
-            transition: all 0.3s;
-        }
-
-        .demo-card:hover {
-            border-color: rgba(247, 184, 1, 0.3);
-        }
-
-        .demo-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 16px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid rgba(247, 184, 1, 0.15);
-        }
-
-        .demo-header i {
-            color: var(--gold);
-            font-size: 16px;
-        }
-
-        .demo-header h6 {
-            margin: 0;
-            color: #fff;
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 1px;
-            font-family: 'DM Mono', monospace;
-        }
-
-        .credential-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .credential-row:last-child {
-            border-bottom: none;
-        }
-
-        .role-badge {
-            font-size: 10px;
-            font-weight: 700;
-            padding: 4px 12px;
-            border-radius: 30px;
-            font-family: 'Poppins', sans-serif;
-        }
-
-        .role-badge.super {
-            background: var(--gold);
-            color: var(--jet-black);
-        }
-
-        .role-badge.bpk {
-            background: rgba(255, 255, 255, 0.1);
-            color: rgba(255, 255, 255, .7);
-        }
-
-        .credential-details {
-            display: flex;
-            gap: 16px;
-            font-size: 12px;
-            font-family: 'DM Mono', monospace;
-        }
-
-        .credential-details code {
-            background: rgba(0, 0, 0, 0.3);
-            padding: 4px 10px;
-            border-radius: 8px;
-            color: var(--gold);
-            font-weight: 500;
-            font-family: 'DM Mono', monospace;
-        }
-
-        .demo-note {
-            margin-top: 14px;
-            padding-top: 10px;
-            font-size: 10px;
-            color: rgba(255, 255, 255, .35);
-            text-align: center;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            border-top: 1px solid rgba(247, 184, 1, 0.08);
-            font-family: 'Poppins', sans-serif;
-        }
-
-        .demo-note strong {
-            color: var(--gold);
-        }
-
         /* Success overlay */
         .success-overlay {
             position: fixed;
@@ -592,12 +490,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             .logo-section h1 {
                 font-size: 24px;
             }
-
-            .credential-details {
-                flex-direction: column;
-                gap: 6px;
-                align-items: flex-end;
-            }
         }
     </style>
 </head>
@@ -660,32 +552,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <a href="index.php">
                     <i class="fas fa-arrow-left"></i> Kembali ke Beranda
                 </a>
-            </div>
-        </div>
-
-        <!-- Demo Credentials -->
-        <div class="demo-card">
-            <div class="demo-header">
-                <i class="fas fa-key"></i>
-                <h6>AKUN DEMO</h6>
-            </div>
-            <div class="credential-row">
-                <span class="role-badge super">Super Admin</span>
-                <div class="credential-details">
-                    <code>superadmin</code>
-                    <code>admin123</code>
-                </div>
-            </div>
-            <div class="credential-row">
-                <span class="role-badge bpk">Admin BPK</span>
-                <div class="credential-details">
-                    <code>admin_bpk1</code>
-                    <code>admin123</code>
-                </div>
-            </div>
-            <div class="demo-note">
-                <i class="fas fa-info-circle"></i>
-                <span>Jika password error, jalankan <strong>reset_password.php</strong></span>
             </div>
         </div>
     </div>

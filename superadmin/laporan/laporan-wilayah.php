@@ -328,8 +328,8 @@ include __DIR__ . '/../../includes/sidebar.php';
             <!-- Grafik Tren Kecamatan (Bar Chart) -->
             <div class="chart-wrapper">
                 <div class="chart-title">Grafik Perbandingan Jumlah Kejadian antar Kecamatan</div>
-                <!-- Kontainer Absolut untuk menjaga rasio grafik saat diprint -->
-                <div style="position: relative; height: 350px; width: 100%;">
+                <!-- Kontainer Absolut untuk menjaga rasio grafik saat diprint. Tinggi diubah jadi 200px agar lebih kecil -->
+                <div style="position: relative; height: 200px; width: 100%;">
                     <canvas id="wilayahChart"></canvas>
                 </div>
             </div>
@@ -353,7 +353,6 @@ include __DIR__ . '/../../includes/sidebar.php';
                         $no = 1;
                         $current_kecamatan = '';
                         foreach ($data_kelurahan as $row): 
-                            // Untuk rowspan (menggabungkan sel kecamatan yang sama) - ini versi simple tanpa rowspan agar lebih aman saat terpotong page
                     ?>
                         <tr>
                             <td style="text-align: center;"><?= $no++ ?></td>

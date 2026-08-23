@@ -18,7 +18,12 @@ $conn = getConnection();
 // Opsional: filter kecamatan via query string
 $filter_kecamatan = isset($_GET['kecamatan']) ? $_GET['kecamatan'] : '';
 
-$query = "SELECT * FROM bpk WHERE 1=1";
+$query = "
+    SELECT bpk.*, 
+    (SELECT COUNT(*) FROM anggota WHERE bpk_id = bpk.id) AS jumlah_anggota 
+    FROM bpk 
+    WHERE 1=1
+";
 $params = [];
 $types = "";
 

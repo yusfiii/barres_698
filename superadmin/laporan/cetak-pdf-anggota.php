@@ -55,17 +55,40 @@ $conn->close();
 ob_start();
 ?>
 
-<table class="data-table">
+<style>
+    /* CSS Khusus untuk tabel anggota agar tidak terpotong (Fixed Layout) */
+    .data-table-fixed {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed; /* Mengunci lebar kolom secara absolut */
+        margin-bottom: 20px;
+    }
+    .data-table-fixed th, .data-table-fixed td {
+        border: 1px solid #666;
+        padding: 6px 4px; /* Padding dikecilkan sedikit */
+        font-size: 8.5pt; /* Font dikecilkan agar muat 9 kolom */
+        word-wrap: break-word; /* Memaksa teks panjang (NIK/No.HP) turun ke bawah */
+        vertical-align: top;
+    }
+    .data-table-fixed th {
+        background: #ECECEC;
+        text-align: center;
+        font-weight: bold;
+    }
+    .center { text-align: center; }
+</style>
+
+<table class="data-table-fixed">
     <thead>
         <tr>
-            <th style="width: 5%;">No</th>
-            <th style="width: 8%;">No. Reg</th>
-            <th style="width: 17%;">Nama</th>
+            <th style="width: 4%;">No</th>
+            <th style="width: 5%;">Reg</th>
+            <th style="width: 16%;">Nama</th>
             <th style="width: 15%;">Tempat, Tgl Lahir</th>
-            <th class="center" style="width: 5%;">JK</th>
-            <th style="width: 18%;">Alamat</th>
-            <th style="width: 12%;">NIK</th>
-            <th style="width: 10%;">No. HP</th>
+            <th style="width: 4%;">JK</th>
+            <th style="width: 20%;">Alamat</th>
+            <th style="width: 14%;">NIK</th>
+            <th style="width: 12%;">No. HP</th>
             <th style="width: 10%;">Jabatan</th>
         </tr>
     </thead>
@@ -82,15 +105,15 @@ ob_start();
                     <td>
                         <?= htmlspecialchars($anggota['nama'] ?? '-') ?><br>
                         <?php if ($filter_bpk == 0): ?>
-                            <small style="color:#666; font-size:8pt;">(<?= htmlspecialchars($anggota['nama_bpk'] ?? '-') ?>)</small>
+                            <small style="color:#666; font-size:7pt;">(<?= htmlspecialchars($anggota['nama_bpk'] ?? '-') ?>)</small>
                         <?php endif; ?>
                     </td>
                     <td><?= $ttl ?></td>
                     <td class="center"><?= $jk ?></td>
                     <td><?= htmlspecialchars($anggota['alamat'] ?? '-') ?></td>
-                    <td><?= htmlspecialchars($anggota['nik'] ?? '-') ?></td>
-                    <td><?= htmlspecialchars($anggota['no_hp'] ?? '-') ?></td>
-                    <td><?= htmlspecialchars($anggota['jabatan'] ?? '-') ?></td>
+                    <td class="center"><?= htmlspecialchars($anggota['nik'] ?? '-') ?></td>
+                    <td class="center"><?= htmlspecialchars($anggota['no_hp'] ?? '-') ?></td>
+                    <td class="center"><?= htmlspecialchars($anggota['jabatan'] ?? '-') ?></td>
                 </tr>
             <?php endforeach; ?>
         <?php else: ?>

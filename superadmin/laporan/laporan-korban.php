@@ -348,7 +348,8 @@ include __DIR__ . '/../../includes/sidebar.php';
             <!-- Grafik Total Dampak (Bar) -->
             <div class="chart-wrapper">
                 <div class="chart-title">Grafik Perbandingan Total Kerusakan & Korban (Tahun <?= $filter_tahun ?>)</div>
-                <div style="position: relative; height: 280px; width: 100%;">
+                <!-- Diubah menjadi 200px agar grafik terlihat lebih kecil dan proporsional -->
+                <div style="position: relative; height: 200px; width: 100%;">
                     <canvas id="totalDampakChart"></canvas>
                 </div>
             </div>

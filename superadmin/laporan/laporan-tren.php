@@ -48,72 +48,12 @@ $res_detail = $stmt->get_result();
 
 $detail_kejadian = [];
 $total_kejadian = 0;
-$total_bangunan = 0;
-$total_luka = 0;
-$total_jiwa = 0;
 
 while ($row = $res_detail->fetch_assoc()) {
     $detail_kejadian[] = $row;
     $total_kejadian++;
-    $total_bangunan += $row['jumlah_bangunan'] ?? 0;
-    $total_luka += $row['korban_luka'] ?? 0;
-    $total_jiwa += $row['korban_jiwa'] ?? 0;
 }
 $stmt->close();
-
-// 2. Data Statistik per Kecamatan (untuk Chart)
-$query_kecamatan = "
-    SELECT kecamatan, COUNT(*) as total 
-    FROM kejadian_kebakaran 
-    WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? 
-    GROUP BY kecamatan 
-    ORDER BY total DESC
-";
-$stmt = $conn->prepare($query_kecamatan);
-$stmt->bind_param("ii", $filter_tahun, $filter_bulan);
-$stmt->execute();
-$res_kecamatan = $stmt->get_result();
-$data_kecamatan = [];
-while ($row = $res_kecamatan->fetch_assoc()) {
-    $data_kecamatan[] = $row;
-}
-$stmt->close();
-
-// 3. Data Penyebab Kebakaran (untuk Chart)
-$query_penyebab = "
-    SELECT penyebab, COUNT(*) as total 
-    FROM kejadian_kebakaran 
-    WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? 
-    GROUP BY penyebab 
-    ORDER BY total DESC
-";
-$stmt = $conn->prepare($query_penyebab);
-$stmt->bind_param("ii", $filter_tahun, $filter_bulan);
-$stmt->execute();
-$res_penyebab = $stmt->get_result();
-$data_penyebab = [];
-while ($row = $res_penyebab->fetch_assoc()) {
-    $data_penyebab[] = $row;
-}
-$stmt->close();
-
-// 4. Data Tingkat Kerusakan (untuk Chart)
-$query_kerusakan = "
-    SELECT kerusakan, COUNT(*) as total 
-    FROM kejadian_kebakaran 
-    WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? AND kerusakan IS NOT NULL 
-    GROUP BY kerusakan
-";
-$stmt = $conn->prepare($query_kerusakan);
-$stmt->bind_param("ii", $filter_tahun, $filter_bulan);
-$stmt->execute();
-$res_kerusakan = $stmt->get_result();
-$data_kerusakan = [];
-while ($row = $res_kerusakan->fetch_assoc()) {
-    $data_kerusakan[] = $row;
-}
-$stmt->close();
-
 $conn->close();
 
 // Include sidebar
@@ -131,8 +71,6 @@ include __DIR__ . '/../../includes/sidebar.php';
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -165,10 +103,10 @@ include __DIR__ . '/../../includes/sidebar.php';
         .btn-pdf-custom { background: rgba(220, 53, 69, 0.1); border: 1px solid rgba(220, 53, 69, 0.3); padding: 10px 20px; border-radius: 12px; font-weight: 600; font-size: 13px; color: #dc3545; transition: all 0.2s; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; height: 100%; width: 100%; }
         .btn-pdf-custom:hover { background: rgba(220, 53, 69, 0.2); color: #dc3545; }
 
-        .preview-container { background: #FFFFFF; border-radius: 20px; padding: 40px 50px; border: 1px solid rgba(0, 0, 0, 0.08); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02); max-width: 210mm; margin: 0 auto; }
+        .preview-container { background: #FFFFFF; border-radius: 20px; padding: 40px 50px; border: 1px solid rgba(0, 0, 0, 0.08); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02); max-width: 210mm; margin: 0 auto; overflow-x: hidden; }
 
         /* Style Laporan */
-        .laporan { font-family: 'Arial', sans-serif !important; font-size: 10pt; color: #000000; line-height: 1.6; }
+        .laporan { font-family: 'Arial', sans-serif !important; font-size: 10pt; color: #000000; line-height: 1.6; width: 100%; }
         .laporan .kop-surat { display: flex; flex-direction: row; align-items: center; justify-content: center; border-bottom: 3px solid #000; padding-bottom: 15px; margin-bottom: 20px; }
         .laporan .kop-surat img { height: 75px; width: auto; margin-right: 20px; }
         .laporan .kop-surat .kop-text { flex: 1; text-align: center; padding-right: 95px; }
@@ -177,12 +115,10 @@ include __DIR__ . '/../../includes/sidebar.php';
         .laporan .surat-info { display: flex; justify-content: space-between; margin: 12px 0 15px 0; font-size: 11pt; }
         .laporan .surat-info .label { font-weight: 700; }
         .laporan .judul { text-align: center; margin: 15px 0 20px 0; font-weight: 700; font-size: 14pt; text-transform: uppercase; }
-
-        .chart-wrapper { border: 1px solid #E0E0E0; border-radius: 12px; padding: 15px; margin-bottom: 20px; background: #FAFAFA; page-break-inside: avoid; }
-        .chart-title { text-align: center; font-weight: bold; font-size: 11pt; margin-bottom: 10px; color: #333; }
         
-        .laporan .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; page-break-inside: auto; }
-        .laporan .data-table th, .laporan .data-table td { border: 1px solid #666; padding: 6px 8px; font-size: 9.5pt; vertical-align: top; }
+        /* Modifikasi tabel agar Fixed Layout dan tidak meluber memotong pinggiran container */
+        .laporan .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; page-break-inside: auto; table-layout: fixed; }
+        .laporan .data-table th, .laporan .data-table td { border: 1px solid #666; padding: 6px 6px; font-size: 9pt; vertical-align: top; word-wrap: break-word; }
         .laporan .data-table th { background: #ECECEC; text-align: center; font-weight: bold; }
         .laporan .data-table tr { page-break-inside: avoid; page-break-after: auto; }
         
@@ -198,7 +134,6 @@ include __DIR__ . '/../../includes/sidebar.php';
             .sidebar, .top-navbar, .dropdown-menu-custom, .user-avatar, .action-section, .no-print { display: none !important; }
             .main-content { margin: 0 !important; padding: 0 !important; min-height: auto !important; }
             .preview-container { border: none !important; box-shadow: none !important; padding: 0 !important; max-width: 100% !important; width: 100% !important; margin: 0 !important; }
-            .chart-wrapper { border: 1px solid #ddd !important; background: transparent !important; page-break-inside: avoid !important; margin-bottom: 15px !important; }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
     </style>
@@ -288,31 +223,11 @@ include __DIR__ . '/../../includes/sidebar.php';
             <div class="judul">LAPORAN KEJADIAN KEBAKARAN<br><span style="font-size: 12pt;">BULAN <?= strtoupper($nama_bulan[$filter_bulan]) ?> TAHUN <?= $filter_tahun ?></span></div>
 
             <p style="text-align: justify; margin-bottom: 15px;">
-                Berdasarkan rekapitulasi data darurat yang dihimpun oleh Banjarbaru Rescue 698, pada bulan <strong><?= $nama_bulan[$filter_bulan] ?> <?= $filter_tahun ?></strong> tercatat telah terjadi sebanyak <strong><?= $total_kejadian ?></strong> insiden kebakaran. Berikut adalah rincian detail kejadian serta statistik dampaknya:
+                Berdasarkan rekapitulasi data darurat yang dihimpun oleh Banjarbaru Rescue 698, pada bulan <strong><?= $nama_bulan[$filter_bulan] ?> <?= $filter_tahun ?></strong> tercatat telah terjadi sebanyak <strong><?= $total_kejadian ?></strong> insiden kebakaran. Berikut adalah rincian detail kejadian dampaknya:
             </p>
 
-            <!-- Tabel Summary Singkat -->
-            <table class="data-table" style="width: 60%; margin: 0 auto 25px auto;">
-                <tr>
-                    <th style="width: 70%; text-align: left; padding-left: 15px;">Total Kejadian Kebakaran</th>
-                    <td style="text-align: center; font-weight: bold;"><?= $total_kejadian ?> Kejadian</td>
-                </tr>
-                <tr>
-                    <th style="text-align: left; padding-left: 15px;">Total Bangunan Terdampak</th>
-                    <td style="text-align: center; font-weight: bold;"><?= $total_bangunan ?> Bangunan</td>
-                </tr>
-                <tr>
-                    <th style="text-align: left; padding-left: 15px;">Total Korban Luka</th>
-                    <td style="text-align: center; font-weight: bold; color: <?= $total_luka > 0 ? '#dc3545' : 'inherit' ?>;"><?= $total_luka ?> Jiwa</td>
-                </tr>
-                <tr>
-                    <th style="text-align: left; padding-left: 15px;">Total Korban Meninggal</th>
-                    <td style="text-align: center; font-weight: bold; color: <?= $total_jiwa > 0 ? '#dc3545' : 'inherit' ?>;"><?= $total_jiwa ?> Jiwa</td>
-                </tr>
-            </table>
-
             <p style="text-align: justify; margin-bottom: 10px;">
-                <strong>A. Detail Rincian Kejadian:</strong>
+                <strong>Detail Rincian Kejadian:</strong>
             </p>
 
             <!-- Tabel Detail Kejadian -->
@@ -352,40 +267,6 @@ include __DIR__ . '/../../includes/sidebar.php';
                 </tbody>
             </table>
 
-            <div style="page-break-before: always;"></div>
-
-            <p style="text-align: justify; margin-bottom: 10px; margin-top:20px;">
-                <strong>B. Visualisasi Statistik Bulan <?= $nama_bulan[$filter_bulan] ?>:</strong>
-            </p>
-
-            <!-- Grafik Analisis Bulan Ini -->
-            <div class="row mb-4">
-                <div class="col-12 mb-4">
-                    <div class="chart-wrapper">
-                        <div class="chart-title">Distribusi Kejadian per Kecamatan</div>
-                        <div style="position: relative; height: 250px; width: 100%;">
-                            <canvas id="kecamatanChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6">
-                    <div class="chart-wrapper h-100 m-0">
-                        <div class="chart-title">Persentase Penyebab</div>
-                        <div style="position: relative; height: 220px; width: 100%;">
-                            <canvas id="penyebabChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6">
-                    <div class="chart-wrapper h-100 m-0">
-                        <div class="chart-title">Tingkat Kerusakan Bangunan</div>
-                        <div style="position: relative; height: 220px; width: 100%;">
-                            <canvas id="kerusakanChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- TTD -->
             <div class="ttd-section">
                 <div class="ttd-place">Banjarbaru, <?= date('d F Y') ?></div>
@@ -408,79 +289,6 @@ include __DIR__ . '/../../includes/sidebar.php';
         document.addEventListener('click', function() {
             document.getElementById('dropdownMenu').classList.remove('show');
         });
-
-        // 1. Chart Kecamatan (Bar Chart)
-        const dataKecamatan = <?= json_encode($data_kecamatan) ?>;
-        if (dataKecamatan.length > 0) {
-            const ctxKecamatan = document.getElementById('kecamatanChart').getContext('2d');
-            new Chart(ctxKecamatan, {
-                type: 'bar',
-                data: {
-                    labels: dataKecamatan.map(d => d.kecamatan),
-                    datasets: [{
-                        label: 'Jumlah Kejadian',
-                        data: dataKecamatan.map(d => d.total),
-                        backgroundColor: '#F7B801',
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
-                }
-            });
-        } else {
-            document.getElementById('kecamatanChart').parentElement.innerHTML = '<p class="text-center text-muted" style="margin-top:100px;">Nihil Kejadian</p>';
-        }
-
-        // 2. Chart Penyebab (Doughnut)
-        const dataPenyebab = <?= json_encode($data_penyebab) ?>;
-        const warnaPalette = ['#F7B801', '#dc3545', '#17a2b8', '#28a745', '#6c757d', '#fd7e14'];
-        if (dataPenyebab.length > 0) {
-            const ctxPenyebab = document.getElementById('penyebabChart').getContext('2d');
-            new Chart(ctxPenyebab, {
-                type: 'doughnut',
-                data: {
-                    labels: dataPenyebab.map(d => d.penyebab || 'Tidak Diketahui'),
-                    datasets: [{
-                        data: dataPenyebab.map(d => d.total),
-                        backgroundColor: warnaPalette.slice(0, dataPenyebab.length),
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } }
-                }
-            });
-        } else {
-            document.getElementById('penyebabChart').parentElement.innerHTML = '<p class="text-center text-muted" style="margin-top:80px;">Nihil Kejadian</p>';
-        }
-
-        // 3. Chart Kerusakan (Pie)
-        const dataKerusakan = <?= json_encode($data_kerusakan) ?>;
-        const warnaKerusakanMap = { 'RUSAK RINGAN': '#28a745', 'RUSAK SEDANG': '#ffc107', 'RUSAK BERAT': '#fd7e14', 'RUSAK TOTAL': '#dc3545' };
-        if (dataKerusakan.length > 0) {
-            const ctxKerusakan = document.getElementById('kerusakanChart').getContext('2d');
-            new Chart(ctxKerusakan, {
-                type: 'pie',
-                data: {
-                    labels: dataKerusakan.map(d => d.kerusakan.toUpperCase()),
-                    datasets: [{
-                        data: dataKerusakan.map(d => d.total),
-                        backgroundColor: dataKerusakan.map(d => warnaKerusakanMap[d.kerusakan.toUpperCase()] || '#6c757d'),
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } }
-                }
-            });
-        } else {
-            document.getElementById('kerusakanChart').parentElement.innerHTML = '<p class="text-center text-muted" style="margin-top:80px;">Nihil Kejadian</p>';
-        }
     </script>
 </body>
 </html>

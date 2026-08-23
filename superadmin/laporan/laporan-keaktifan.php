@@ -288,12 +288,12 @@ include __DIR__ . '/../../includes/sidebar.php';
                 Berdasarkan data registrasi anggota pada Banjarbaru Rescue 698 hingga tanggal <strong><?= date('d F Y') ?></strong>, tercatat sebanyak <strong><?= $total_relawan ?></strong> relawan yang tersebar di berbagai unit BPK/PMK. Berikut adalah rincian proporsi status keaktifan anggota secara global maupun persebaran pada tiap kesatuan:
             </p>
 
-            <!-- Grafik Row -->
+            <!-- Grafik Row (Ketinggian diperkecil jadi 160px) -->
             <div class="row mb-4">
                 <div class="col-5">
                     <div class="chart-wrapper h-100 m-0">
                         <div class="chart-title">Persentase Status Global</div>
-                        <div style="position: relative; height: 220px; width: 100%;">
+                        <div style="position: relative; height: 160px; width: 100%;">
                             <canvas id="statusGlobalChart"></canvas>
                         </div>
                     </div>
@@ -301,7 +301,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 <div class="col-7">
                     <div class="chart-wrapper h-100 m-0">
                         <div class="chart-title">Top 10 BPK dengan Anggota Aktif Terbanyak</div>
-                        <div style="position: relative; height: 220px; width: 100%;">
+                        <div style="position: relative; height: 160px; width: 100%;">
                             <canvas id="topBpkChart"></canvas>
                         </div>
                     </div>
@@ -397,7 +397,7 @@ include __DIR__ . '/../../includes/sidebar.php';
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+                    legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } },
                     tooltip: {
                         callbacks: {
                             label: function(context) {

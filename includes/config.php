@@ -93,6 +93,37 @@ function getCurrentUser() {
 // ============================================================
 
 /**
+ * Fungsi Deteksi IP Address Canggih & Ramah Dosen
+ */
+function getClientIP() {
+    $ipaddress = '';
+    
+    // Cek IP dari berbagai header proxy/jaringan
+    if (isset($_SERVER['HTTP_CLIENT_IP'])) {
+        $ipaddress = $_SERVER['HTTP_CLIENT_IP'];
+    } else if(isset($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $ipaddress = $_SERVER['HTTP_X_FORWARDED_FOR'];
+    } else if(isset($_SERVER['HTTP_X_FORWARDED'])) {
+        $ipaddress = $_SERVER['HTTP_X_FORWARDED'];
+    } else if(isset($_SERVER['HTTP_FORWARDED_FOR'])) {
+        $ipaddress = $_SERVER['HTTP_FORWARDED_FOR'];
+    } else if(isset($_SERVER['HTTP_FORWARDED'])) {
+        $ipaddress = $_SERVER['HTTP_FORWARDED'];
+    } else if(isset($_SERVER['REMOTE_ADDR'])) {
+        $ipaddress = $_SERVER['REMOTE_ADDR'];
+    } else {
+        $ipaddress = 'UNKNOWN';
+    }
+
+    // Konversi IPv6 Localhost (::1) menjadi IPv4 (127.0.0.1)
+    if ($ipaddress == '::1') {
+        $ipaddress = '127.0.0.1';
+    }
+
+    return $ipaddress;
+}
+
+/**
  * Mencatat aktivitas pengguna ke database
  */
 function logAktivitas($aktivitas, $user_id = null) {
@@ -124,7 +155,8 @@ function logAktivitas($aktivitas, $user_id = null) {
         return false;
     }
     
-    $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
+    // Memanggil fungsi penangkap IP yang sudah disempurnakan
+    $ip_address = getClientIP();
     $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
     
     $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, username, role, nama, aktivitas, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)");

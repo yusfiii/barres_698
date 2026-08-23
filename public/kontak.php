@@ -796,11 +796,11 @@ require_once __DIR__ . '/../includes/session.php';
                     </div>
                     <div class="footer-contact-item">
                         <i class="fas fa-phone"></i>
-                        <span>(0511) 123456</span>
+                        <span>(0851) 11315698</span>
                     </div>
                     <div class="footer-contact-item">
                         <i class="fas fa-envelope"></i>
-                        <span>info@barres698.id</span>
+                        <span>barres698.banjarbaru@gmail.com</span>
                     </div>
                 </div>
 
@@ -808,7 +808,7 @@ require_once __DIR__ . '/../includes/session.php';
                     <div class="footer-heading">Darurat</div>
                     <div class="emergency-box">
                         <div class="label">Pemadam Kebakaran</div>
-                        <div class="number">113</div>
+                        <div class="number">112</div>
                     </div>
                 </div>
             </div>
